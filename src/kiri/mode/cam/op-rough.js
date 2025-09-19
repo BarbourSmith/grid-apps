@@ -77,7 +77,7 @@ class OpRough extends CamOp {
         let shadow = [];
         let slices = [];
         let indices = slicer.interval(roughDown, {
-            down: true, min: workarea.bottom_z, fit: true, off: 0.01
+            down: true, min: 0, fit: true, off: 0.01
         });
 
         // shift out first (top-most) slice
@@ -258,8 +258,16 @@ class OpRough extends CamOp {
 
         let last = slices[slices.length-1];
 
-        // z-thru cuts are now handled by main slicing (min: workarea.bottom_z)
-        // No separate z-thru slices needed since roughLeaveZ is applied in main loop
+        // extend cut thru (keep separate handling as requested in GridSpace PR #425)
+        if (workarea.bottom_z < 0)
+        for (let zneg of base_util.lerp(0, workarea.bottom_z, op.down)) {
+            if (!last) continue;
+            let add = last.clone(true);
+            add.z = zneg;
+            add.camLines = last.camLines.clone(true);
+            add.camLines.forEach(p => p.setZ(add.z + roughLeaveZ));
+            slices.push(add);
+        }
 
         slices.forEach(slice => {
             slice.output()

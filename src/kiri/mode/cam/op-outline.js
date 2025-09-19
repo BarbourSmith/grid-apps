@@ -33,7 +33,7 @@ class OpOutline extends CamOp {
             off: 0.01,
             fit: true,
             down: true,
-            min: workarea.bottom_z,
+            min: Math.max(0, workarea.bottom_z),
             max: workarea.top_z
         };
         let indices = slicer.interval(op.down, intopt);
@@ -97,8 +97,18 @@ class OpOutline extends CamOp {
             }
         }
 
-        // z-thru cuts are now handled by main slicing (min: workarea.bottom_z)
-        // No separate z-thru slices needed
+        // extend cut thru (keep separate handling as requested in GridSpace PR #425)
+        if (workarea.bottom_z < 0) {
+            let last = slices[slices.length-1];
+            for (let zneg of base_util.lerp(0, workarea.bottom_z, op.down)) {
+                if (!last) continue;
+                let add = last.clone(true);
+                add.tops.forEach(top => top.poly.setZ(add.z));
+                add.shadow = last.shadow.clone(true);
+                add.z = zneg;
+                slices.push(add);
+            }
+        }
 
         slices.forEach(slice => {
             let tops = slice.shadow;
