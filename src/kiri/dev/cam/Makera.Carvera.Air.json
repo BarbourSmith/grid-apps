@@ -19,11 +19,11 @@
         "M30 ; program end"
     ],
     "gcodeDwell": [
-        "G4 P{time} ; dwell for {time}ms"
+        "G4 P{time} ; dwell for {time}s"
     ],
     "gcodeSpindle": [
         "M3 S{spindle}",
-        "G4 P4000"
+        "G4 P4 ; pause during 4 seconds"
     ],
     "gcodeChange": [
         "M6 T{tool} ; change tool to '{tool_name}'"
