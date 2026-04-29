@@ -207,6 +207,10 @@ export function sla_slice(settings, widget, onupdate, ondone) {
     let bounds = widget.getBoundingBox();
     let points = widget.getPoints();
 
+    if (isConcurrent) {
+        minions.setPoints(points);
+    }
+
     slicer.slice(points, {
         indices: process.indices || process.xray,
         union: controller.healMesh,
@@ -229,6 +233,7 @@ export function sla_slice(settings, widget, onupdate, ondone) {
             return newSlice(z).addTops(tops);
         });
         onSliceDone(slices).then(ondone);
+        minions.setPoints([]);
     });
 };
 
