@@ -99,6 +99,9 @@ function device_from_code(code,mode) {
         bedBelt: valueOf(set.bed_belt, false),
         resolutionX: valueOf(set.resolution_x, 1600),
         resolutionY: valueOf(set.resolution_y, 900),
+        slaFormat: valueOf(set.sla_format, ''),
+        slaFileExt: valueOf(set.sla_file_ext, ''),
+        slaFormatVersion: valueOf(set.sla_format_version, 1),
         deviceZMax: valueOf(set.z_move_max, 0),
         gcodeTime: valueOf(set.time_factor, 1),
         maxHeight: valueOf(set.build_height, 150),
@@ -367,7 +370,10 @@ export const conf = {
                 bedHeight: 1.5,
                 maxHeight: 150,
                 resolutionX: 1600,
-                resolutionY: 900
+                resolutionY: 900,
+                slaFormat: "",
+                slaFileExt: "",
+                slaFormatVersion: 1
             },
             // process defaults SLA:Process
             p:{

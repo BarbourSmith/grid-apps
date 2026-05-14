@@ -1,5 +1,7 @@
 /** Copyright Stewart Allen <sa@grid.space> -- All Rights Reserved */
 
+import { SLA } from './init-work.js';
+
 const default_values = {
     magic1: 'CXSW3DV2',
     magic2: 'CXSW3DV2',
@@ -392,7 +394,7 @@ CXDLP.render = function(params) {
         }
     });
 
-    let wasm = kiri.driver.SLA.wasm;
+    let wasm = SLA.wasm;
     let imagelen = width * height;
     let writer = new self.DataWriter(new DataView(wasm.memory.buffer), imagelen);
     writer.writeU16(width, true);

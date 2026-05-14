@@ -3,6 +3,8 @@
 import { CXDLP } from './x_cxdlp.js';
 import { photon } from './x_photon.js';
 import { SLA } from './init-work.js';
+import { RSLA } from './x_rsla.js';
+import { VSLA } from './x_vsla.js';
 
 /**
  * DRIVER CONTRACT - runs in worker
@@ -33,16 +35,30 @@ export function sla_export(print, online, ondone) {
         layermax = Math.max(widget.slices.length);
     });
 
-    let isPhoton = false;
+    let format = device.slaFormat || ({
+        'Anycubic.Photon': 'photon',
+        'Anycubic.Photon.S': 'photons',
+    }[device.deviceName]) || 'cxdlp';
 
-    switch (device.deviceName) {
-        case 'Anycubic.Photon':
-        case 'Anycubic.Photon.S':
-            isPhoton = true;
-            break;
+    if (format === 'vsla') {
+        return VSLA.encode(print, (progress, message) => {
+            online({ progress, message });
+        }).then(output => {
+            let { file, layers, volume } = output;
+            ondone({ width, height, file, layers, volume }, [file]);
+        });
     }
 
-    if (isPhoton) {
+    if (format === 'rsla') {
+        return RSLA.encode(print, (progress, message) => {
+            online({ progress, message });
+        }).then(output => {
+            let { file, layers, volume } = output;
+            ondone({ width, height, file, layers, volume }, [file]);
+        });
+    }
+
+    if (format === 'photon' || format === 'photons') {
         let legacyMode = SLA.legacy || alias > 1,
             part1 = legacyMode ? 0.25 : 0.85,
             part2 = (1 - part1),
@@ -73,9 +89,9 @@ export function sla_export(print, online, ondone) {
         }
 
         let exp_func = {
-            'Anycubic.Photon': photon.generatePhoton,
-            'Anycubic.Photon.S': photon.generatePhotons,
-        }[device.deviceName] || photon.generatePhoton;
+            photon: photon.generatePhoton,
+            photons: photon.generatePhotons,
+        }[format] || photon.generatePhoton;
 
         let file = exp_func(print, {
             width: width,

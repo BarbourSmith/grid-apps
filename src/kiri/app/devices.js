@@ -185,6 +185,8 @@ function setDeviceCode(code, devicename) {
             }
         }
 
+        let allowSLADeviceEdit = mode !== 'SLA' || dev.slaFormat === 'vsla' || dev.slaFormat === 'rsla';
+
         // disable editing for non-local devices
         [
             // ui.deviceName,
@@ -226,14 +228,14 @@ function setDeviceCode(code, devicename) {
             ui.extOffsetX,
             ui.extOffsetY
         ].forEach(function(e) {
-            e.disabled = !local;
+            e.disabled = !local || !allowSLADeviceEdit;
         });
 
-        ui.devices.save.disabled = !local;
+        ui.devices.save.disabled = !local || !allowSLADeviceEdit;
         ui.devices.delete.disabled = !local;
         ui.devices.rename.disabled = !local;
         ui.devices.export.disabled = !local;
-        ui.devices.add.style.display = mode === 'SLA' ? 'none' : '';
+        ui.devices.add.style.display = allowSLADeviceEdit ? '' : 'none';
 
         if (local) {
             ui.devices.add.innerText = "copy";
