@@ -25,7 +25,7 @@ function init(worker) {
 async function sla_prepare(widgets, settings, update) {
     self.kiri_worker.current.print = newPrint(settings, widgets);
     if (!SLA.wasm) {
-        fetch('/wasm/kiri-sla.wasm')
+        SLA.wasmPromise = SLA.wasmPromise || fetch('/wasm/kiri-sla.wasm')
             .then(response => response.arrayBuffer())
             .then(bytes => WebAssembly.instantiate(bytes, {
                 env: {
@@ -44,6 +44,7 @@ async function sla_prepare(widgets, settings, update) {
                     rle_encode: exports.rle_encode
                 };
             });
+        await SLA.wasmPromise;
     }
     update(1);
 }
