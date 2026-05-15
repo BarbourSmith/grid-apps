@@ -2,6 +2,7 @@
 
 import { $ } from '../../../../moto/webui.js';
 import { api } from '../../../app/api.js';
+import { getSLAFileExt } from '../core/formats.js';
 
 export const SLA = {
     init,
@@ -63,11 +64,7 @@ export function printDownload(output, api, names) {
     $('print-layers').value = layers;
     $('print-time').value = `${print_hrs}:${print_min}:${print_sec}`;
 
-    let ext = device.slaFileExt || ({
-        'Anycubic.Photon': 'photon',
-        'Anycubic.Photon.S': 'photons'
-    }[device.deviceName]) || 'cxdlp';
-
+    let ext = getSLAFileExt(device);
     ext = ext.startsWith(".") ? ext : `.${ext}`;
     download.innerText = `${api.language.current.ex_dwnl || 'download'} ${ext}`;
     download.onclick = () => { saveFile(api, file, ext) };

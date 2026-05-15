@@ -1,10 +1,12 @@
 /** Copyright Stewart Allen <sa@grid.space> -- All Rights Reserved */
 
 import { CXDLP } from './x_cxdlp.js';
+import { CTB } from './x_ctb.js';
 import { photon } from './x_photon.js';
 import { SLA } from './init-work.js';
 import { RSLA } from './x_rsla.js';
 import { VSLA } from './x_vsla.js';
+import { getSLAFormat } from '../core/formats.js';
 
 /**
  * DRIVER CONTRACT - runs in worker
@@ -35,10 +37,7 @@ export function sla_export(print, online, ondone) {
         layermax = Math.max(widget.slices.length);
     });
 
-    let format = device.slaFormat || ({
-        'Anycubic.Photon': 'photon',
-        'Anycubic.Photon.S': 'photons',
-    }[device.deviceName]) || 'cxdlp';
+    let format = getSLAFormat(device);
 
     if (format === 'vsla') {
         return VSLA.encode(print, (progress, message) => {
@@ -53,6 +52,15 @@ export function sla_export(print, online, ondone) {
         return RSLA.encode(print, (progress, message) => {
             online({ progress, message });
         }).then(output => {
+            let { file, layers, volume } = output;
+            ondone({ width, height, file, layers, volume }, [file]);
+        });
+    }
+
+    if (format === 'ctb') {
+        return CTB.encode(print, (progress, message) => {
+            online({ progress, message });
+        }, photon).then(output => {
             let { file, layers, volume } = output;
             ondone({ width, height, file, layers, volume }, [file]);
         });

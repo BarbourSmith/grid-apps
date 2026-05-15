@@ -3,6 +3,7 @@
 import { $, h } from '../../moto/webui.js';
 import { api } from './api.js';
 import { conf } from './conf/defaults.js';
+import { canEditSLAMachine } from '../mode/sla/core/formats.js';
 import { space } from '../../moto/space.js';
 import { devices as devlist } from '../../pack/kiri-devs.js';
 import { settings, conf as setconf } from './conf/manager.js';
@@ -185,7 +186,7 @@ function setDeviceCode(code, devicename) {
             }
         }
 
-        let allowSLADeviceEdit = mode !== 'SLA' || dev.slaFormat === 'vsla' || dev.slaFormat === 'rsla';
+        let allowSLADeviceEdit = mode !== 'SLA' || canEditSLAMachine(dev);
 
         // disable editing for non-local devices
         [
