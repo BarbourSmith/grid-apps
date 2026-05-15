@@ -3,6 +3,7 @@
 import { CXDLP } from './x_cxdlp.js';
 import { CTB } from './x_ctb.js';
 import { photon } from './x_photon.js';
+import { PW } from './x_pw.js';
 import { SLA } from './init-work.js';
 import { RSLA } from './x_rsla.js';
 import { VSLA } from './x_vsla.js';
@@ -64,6 +65,11 @@ export function sla_export(print, online, ondone) {
             let { file, layers, volume } = output;
             ondone({ width, height, file, layers, volume }, [file]);
         });
+    }
+
+    if (format === 'pwmo' || format === 'pwma' || format === 'pwmb' ||
+        format === 'pm3n' || format === 'pm4n') {
+        return PW.encode(format);
     }
 
     if (format === 'photon' || format === 'photons') {

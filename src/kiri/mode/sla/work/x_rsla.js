@@ -3,41 +3,18 @@
 import { JSZip } from '../../../../ext/jszip-esm.js';
 import { PNG } from '../../../../ext/pngjs.esm.js';
 import { photon } from './x_photon.js';
+import { imageToRowMajor, renderRasterLayers, round } from './raster.js';
 
 const FORMAT = "rsla";
 const MIME = "application/vnd.gridspace.rsla+zip";
 
 function encode(print, progress) {
-    let { settings, widgets } = print;
-    let { device, process } = settings;
-    let width = device.resolutionX;
-    let height = device.resolutionY;
-    let scaleX = width / device.bedWidth;
-    let scaleY = height / device.bedDepth;
-    let layermax = 0;
-
-    widgets = widgets.filter(w => !w.track.ignore && !w.meta.disabled);
-    widgets.forEach(widget => {
-        layermax = Math.max(layermax, widget.slices.length);
-    });
-
     let layers = [];
-    let volume = 0;
     let zip = new JSZip();
 
-    for (let index=0; index<layermax; index++) {
-        let rendered = photon.renderLayerWasm({
-            index,
-            width,
-            height,
-            widgets,
-            scaleX,
-            scaleY,
-            masks: []
-        });
-        if (rendered.end) {
-            break;
-        }
+    let { ctx, volume } = renderRasterLayers(print, photon, params => {
+        let { index, rendered, ctx } = params;
+        let { process, width, height } = ctx;
 
         let file = `layers/${index.toString().padStart(6, "0")}.png`;
         let layer = {
@@ -47,13 +24,11 @@ function encode(print, progress) {
             file
         };
 
-        volume += rendered.area * process.slaSlice;
         layers.push(layer);
         zip.file(file, imageToPNG(rendered.image, width, height));
+    }, progress ? (value) => progress(value * 0.85, "raster_gen") : null);
 
-        if (progress) progress((index / layermax) * 0.85, "raster_gen");
-    }
-
+    let { device, process } = ctx;
     let manifest = createManifest({ device, process, layers, volume });
     zip.file("manifest.json", JSON.stringify(manifest, null, 2));
 
@@ -122,21 +97,12 @@ function createManifest(params) {
 }
 
 function imageToPNG(image, width, height) {
-    let data = new Uint8Array(width * height);
-    for (let x=0; x<width; x++) {
-        for (let y=0; y<height; y++) {
-            data[y * width + x] = image[x * height + y] ? 255 : 0;
-        }
-    }
+    let data = imageToRowMajor(image, width, height, value => value ? 255 : 0);
     return PNG.sync.write({ width, height, data }, {
         colorType: 0,
         inputColorType: 0,
         inputHasAlpha: false
     });
-}
-
-function round(value) {
-    return Number.parseFloat(Number(value || 0).toFixed(5));
 }
 
 export const RSLA = {

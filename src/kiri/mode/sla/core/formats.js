@@ -45,6 +45,41 @@ export const SLA_FORMATS = {
         available: true,
         priority: 1,
         family: 'chitubox'
+    },
+    pwmo: {
+        id: 'pwmo',
+        ext: 'pwmo',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pwma: {
+        id: 'pwma',
+        ext: 'pwma',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pwmb: {
+        id: 'pwmb',
+        ext: 'pwmb',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm3n: {
+        id: 'pm3n',
+        ext: 'pm3n',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm4n: {
+        id: 'pm4n',
+        ext: 'pm4n',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
     }
 };
 

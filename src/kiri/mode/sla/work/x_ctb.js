@@ -2,6 +2,7 @@
 
 import { JSZip } from '../../../../ext/jszip-esm.js';
 import { PNG } from '../../../../ext/pngjs.esm.js';
+import { imageToRowMajor, renderRasterLayers, round } from './raster.js';
 
 const CTB_V3_MAGIC = 0x12fd0086;
 const HEADER_SIZE = 0x70;
@@ -20,55 +21,34 @@ function encode(print, progress, renderer) {
 }
 
 function encodeWithPhoton(print, progress, photon) {
-    let { settings, widgets } = print;
-    let { device, process } = settings;
-    let width = device.resolutionX;
-    let height = device.resolutionY;
-    let scaleX = width / device.bedWidth;
-    let scaleY = height / device.bedDepth;
-    let layermax = 0;
     let layers = [];
-    let volume = 0;
     let seed = makeSeed(print);
+    let previews = [
+        createPreview(400, 300),
+        createPreview(200, 125)
+    ];
 
-    widgets = widgets.filter(w => !w.track.ignore && !w.meta.disabled);
-    widgets.forEach(widget => {
-        layermax = Math.max(layermax, widget.slices.length);
-    });
-
-    for (let index=0; index<layermax; index++) {
-        let rendered = photon.renderLayerWasm({
-            index,
-            width,
-            height,
-            widgets,
-            scaleX,
-            scaleY,
-            masks: []
-        });
-        if (rendered.end) {
-            break;
-        }
+    let { ctx, volume } = renderRasterLayers(print, photon, params => {
+        let { index, rendered, bottom, z, ctx } = params;
+        let { process, width, height } = ctx;
 
         let pixels = renderToCTBPixels(rendered.image, width, height);
         let encoded = encipher(seed, index, encodeRLE(pixels));
-        let bottom = index < process.slaBaseLayers;
+        previews.forEach(preview => accumulatePreview(preview, rendered.image, width, height));
 
-        volume += rendered.area * process.slaSlice;
         layers.push({
             index,
-            z: process.slaFirstOffset + process.slaSlice * (index + 1),
+            z,
             exposure: bottom ? process.slaBaseOn : process.slaLayerOn,
             lightOffDelay: bottom ? process.slaBaseOff : process.slaLayerOff,
             liftDistance: bottom ? process.slaBasePeelDist : process.slaPeelDist,
             liftSpeed: (bottom ? process.slaBasePeelLiftRate : process.slaPeelLiftRate) * 60,
             data: encoded
         });
+    }, progress ? (value) => progress(value * 0.85, "ctb_encode") : null);
 
-        if (progress) progress((index / layermax) * 0.85, "ctb_encode");
-    }
-
-    let file = writeCTB({ device, process, layers, volume, seed });
+    let { device, process } = ctx;
+    let file = writeCTB({ device, process, layers, volume, seed, previews });
     if (progress) progress(1, "ctb_write");
 
     return { file, layers: layers.length, volume };
@@ -86,6 +66,7 @@ function read(input) {
         header,
         print: readPrintParams(view, header),
         machine: readMachineName(view, header),
+        previews: readPreviews(view, header),
         layers,
         layout: inferLayout(header, layers)
     };
@@ -141,12 +122,17 @@ function decodeLayer(view, header, layer) {
 }
 
 function writeCTB(params) {
-    let { device, process, layers, volume, seed } = params;
+    let { device, process, layers, volume, seed, previews } = params;
     let machine = device.deviceName || "Generic CTB";
     let machineBytes = new TextEncoder().encode(machine);
+    let previewData = previews.map(encodePreview);
     let printTime = Math.round((process.slaBaseLayers * process.slaBaseOn) +
         Math.max(0, layers.length - process.slaBaseLayers) * process.slaLayerOn);
-    let printParamsOffset = HEADER_SIZE;
+    let previewLargeOffset = HEADER_SIZE;
+    let previewLargeDataOffset = previewLargeOffset + 32;
+    let previewSmallOffset = previewLargeDataOffset + previewData[0].length;
+    let previewSmallDataOffset = previewSmallOffset + 32;
+    let printParamsOffset = previewSmallDataOffset + previewData[1].length;
     let machineInfoOffset = printParamsOffset + PRINT_PARAMS_SIZE;
     let nameOffset = machineInfoOffset + MACHINE_INFO_SIZE;
     let layerTableOffset = nameOffset + machineBytes.length;
@@ -169,10 +155,20 @@ function writeCTB(params) {
         layers,
         seed,
         printTime,
+        previewLargeOffset,
+        previewSmallOffset,
         printParamsOffset,
         machineInfoOffset,
         layerTableOffset
     });
+    writer.seek(previewLargeOffset);
+    writePreviewRecord(writer, previews[0], previewLargeDataOffset, previewData[0]);
+    writer.seek(previewLargeDataOffset);
+    writer.writeBytes(previewData[0]);
+    writer.seek(previewSmallOffset);
+    writePreviewRecord(writer, previews[1], previewSmallDataOffset, previewData[1]);
+    writer.seek(previewSmallDataOffset);
+    writer.writeBytes(previewData[1]);
     writer.seek(printParamsOffset);
     writePrintParams(writer, { process, volume });
     writer.seek(machineInfoOffset);
@@ -193,6 +189,7 @@ function writeCTB(params) {
 function writeHeader(writer, params) {
     let {
         device, process, layers, seed, printTime,
+        previewLargeOffset, previewSmallOffset,
         printParamsOffset, machineInfoOffset, layerTableOffset
     } = params;
 
@@ -209,10 +206,10 @@ function writeHeader(writer, params) {
     writer.writeU32(process.slaBaseLayers);
     writer.writeU32(device.resolutionX);
     writer.writeU32(device.resolutionY);
-    writer.writeU32(0);
+    writer.writeU32(previewLargeOffset);
     writer.writeU32(layerTableOffset);
     writer.writeU32(layers.length);
-    writer.writeU32(0);
+    writer.writeU32(previewSmallOffset);
     writer.writeU32(printTime);
     writer.writeU32(1);
     writer.writeU32(printParamsOffset);
@@ -223,6 +220,17 @@ function writeHeader(writer, params) {
     writer.writeU32(seed);
     writer.writeU32(machineInfoOffset);
     writer.writeU32(MACHINE_INFO_SIZE);
+}
+
+function writePreviewRecord(writer, preview, dataOffset, data) {
+    writer.writeU32(preview.width);
+    writer.writeU32(preview.height);
+    writer.writeU32(dataOffset);
+    writer.writeU32(data.length);
+    writer.writeU32(0);
+    writer.writeU32(0);
+    writer.writeU32(0);
+    writer.writeU32(0);
 }
 
 function writePrintParams(writer, params) {
@@ -316,9 +324,10 @@ function readHeader(view) {
         resolutionX: view.getUint32(0x34, true),
         resolutionY: view.getUint32(0x38, true),
         previewOffset: view.getUint32(0x3c, true),
+        previewLargeOffset: view.getUint32(0x3c, true),
         layerTableOffset: view.getUint32(0x40, true),
         layerCount: view.getUint32(0x44, true),
-        previewOneLength: view.getUint32(0x48, true),
+        previewSmallOffset: view.getUint32(0x48, true),
         printParamsOffset: view.getUint32(0x54, true),
         printParamsLength: view.getUint32(0x58, true),
         antiAliasLevel: view.getUint32(0x5c, true),
@@ -327,6 +336,27 @@ function readHeader(view) {
         encryptionSeed: view.getUint32(0x64, true),
         machineInfoOffset: view.getUint32(0x68, true),
         machineInfoLength: view.getUint32(0x6c, true)
+    };
+}
+
+function readPreviews(view, header) {
+    return [header.previewLargeOffset, header.previewSmallOffset]
+        .filter(offset => offset > 0)
+        .map((offset, index) => readPreviewRecord(view, offset, index));
+}
+
+function readPreviewRecord(view, offset, index) {
+    return {
+        index,
+        offset,
+        width: view.getUint32(offset + 0, true),
+        height: view.getUint32(offset + 4, true),
+        imageOffset: view.getUint32(offset + 8, true),
+        imageLength: view.getUint32(offset + 12, true),
+        unknown16: view.getUint32(offset + 16, true),
+        unknown20: view.getUint32(offset + 20, true),
+        unknown24: view.getUint32(offset + 24, true),
+        unknown28: view.getUint32(offset + 28, true)
     };
 }
 
@@ -500,14 +530,71 @@ function createRSLAManifest(ctb, layers) {
     };
 }
 
-function renderToCTBPixels(image, width, height) {
-    let data = new Uint8Array(width * height);
-    for (let x=0; x<width; x++) {
-        for (let y=0; y<height; y++) {
-            data[y * width + x] = image[x * height + y] || 0;
+function createPreview(width, height) {
+    return {
+        width,
+        height,
+        image: new Uint8Array(width * height)
+    };
+}
+
+function accumulatePreview(preview, image, width, height) {
+    let { image: target } = preview;
+    let xscale = width / preview.width;
+    let yscale = height / preview.height;
+
+    for (let y=0; y<preview.height; y++) {
+        let sy = Math.min(height - 1, Math.floor(y * yscale));
+        for (let x=0; x<preview.width; x++) {
+            let sx = Math.min(width - 1, Math.floor(x * xscale));
+            if (image[sx * height + sy]) {
+                target[y * preview.width + x] = 255;
+            }
         }
     }
-    return data;
+}
+
+function encodePreview(preview) {
+    let output = [];
+    let data = preview.image;
+    let color = previewColor(data[0]);
+    let run = 1;
+
+    for (let i=1; i<data.length; i++) {
+        let next = previewColor(data[i]);
+        if (next === color && run < 0xfff) {
+            run++;
+            continue;
+        }
+        writePreviewRun(output, color, run);
+        color = next;
+        run = 1;
+    }
+
+    writePreviewRun(output, color, run);
+    return new Uint8Array(output);
+}
+
+function writePreviewRun(output, color, length) {
+    if (length === 1) {
+        writePreviewU16(output, color);
+        return;
+    }
+
+    writePreviewU16(output, color | 0x0020);
+    writePreviewU16(output, 0x3000 | (length - 1));
+}
+
+function previewColor(value) {
+    return value ? 0xffdf : 0x0000;
+}
+
+function writePreviewU16(output, value) {
+    output.push(value & 0xff, (value >> 8) & 0xff);
+}
+
+function renderToCTBPixels(image, width, height) {
+    return imageToRowMajor(image, width, height);
 }
 
 function encodeRLE(input) {
@@ -673,10 +760,6 @@ function toDataView(input) {
     return input instanceof DataView
         ? input
         : new DataView(input.buffer || input, input.byteOffset || 0, input.byteLength);
-}
-
-function round(value) {
-    return Number.parseFloat(Number(value || 0).toFixed(5));
 }
 
 function makeSeed(print) {
