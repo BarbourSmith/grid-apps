@@ -102,6 +102,7 @@ function device_from_code(code,mode) {
         slaFormat: valueOf(set.sla_format, ''),
         slaFileExt: valueOf(set.sla_file_ext, ''),
         slaFormatVersion: valueOf(set.sla_format_version, 1),
+        slaMachineEditable: valueOf(set.sla_machine_editable, false),
         deviceZMax: valueOf(set.z_move_max, 0),
         gcodeTime: valueOf(set.time_factor, 1),
         maxHeight: valueOf(set.build_height, 150),
@@ -373,7 +374,8 @@ export const conf = {
                 resolutionY: 900,
                 slaFormat: "",
                 slaFileExt: "",
-                slaFormatVersion: 1
+                slaFormatVersion: 1,
+                slaMachineEditable: false
             },
             // process defaults SLA:Process
             p:{
