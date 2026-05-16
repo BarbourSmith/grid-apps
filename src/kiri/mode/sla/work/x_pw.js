@@ -4,43 +4,51 @@ import { imageToRowMajor, renderRasterLayers, round } from './raster.js';
 
 const FAMILY = "Photon Workshop";
 const MARK_SIZE = 12;
+const VERSION_516 = 516;
 const VERSION_517 = 517;
+const VERSION_518 = 518;
 const RLE4_ENCODING_LIMIT = 0xfff;
 const FORMAT_RECORDS = {
     pw0:  { ext: "pw0",  generation: "pw",     notes: "Photon Zero" },
     pwx:  { ext: "pwx",  generation: "pw",     notes: "Photon X" },
-    pwmo: { ext: "pwmo", generation: "mono",   notes: "Photon Mono" },
-    pwma: { ext: "pwma", generation: "mono",   notes: "Photon Mono 4K class" },
-    pwms: { ext: "pwms", generation: "mono",   notes: "Photon Mono SE class" },
-    pwmx: { ext: "pwmx", generation: "mono-x", notes: "Photon Mono X class" },
-    pwmb: { ext: "pwmb", generation: "m3",     notes: "Photon M3 / Mono X 6K class" },
-    pwsq: { ext: "pwsq", generation: "m3",     notes: "Photon M3 Premium class" },
-    px6s: { ext: "px6s", generation: "m3",     notes: "Photon X 6Ks class" },
-    pm3:  { ext: "pm3",  generation: "m3",     notes: "Photon M3" },
-    pm3n: { ext: "pm3n", generation: "m3",     notes: "Photon Mono 2" },
-    pm3m: { ext: "pm3m", generation: "m3",     notes: "Photon M3 Max / Plus class" },
-    pm3r: { ext: "pm3r", generation: "m3",     notes: "Photon M3 resolver variant" },
+    dlp:  { ext: "dlp",  generation: "mono",   version: VERSION_516, machine: "Photon Ultra", notes: "Photon Ultra" },
+    dl2p: { ext: "dl2p", generation: "m3",     version: VERSION_517, machine: "Photon D2", notes: "Photon D2" },
+    pwmo: { ext: "pwmo", generation: "mono",   version: VERSION_516, machine: "Photon Mono", notes: "Photon Mono" },
+    pwma: { ext: "pwma", generation: "mono",   version: VERSION_516, machine: "Photon Mono 4K", notes: "Photon Mono 4K class" },
+    pwms: { ext: "pwms", generation: "mono",   version: VERSION_516, machine: "Photon Mono SE", notes: "Photon Mono SE class" },
+    pwmx: { ext: "pwmx", generation: "mono-x", version: VERSION_516, machine: "Photon Mono X", notes: "Photon Mono X class" },
+    pmx2: { ext: "pmx2", generation: "mono-x", version: VERSION_517, machine: "Photon Mono X2", notes: "Photon Mono X2" },
+    pwmb: { ext: "pwmb", generation: "m3",     version: VERSION_517, machine: "Photon Mono X 6K", notes: "Photon M3 Plus / Mono X 6K class" },
+    pmsq: { ext: "pmsq", generation: "m3",     version: VERSION_516, machine: "Photon Mono SQ", notes: "Photon Mono SQ" },
+    px6s: { ext: "px6s", generation: "m3",     version: VERSION_517, machine: "Photon Mono X 6Ks", notes: "Photon X 6Ks class" },
+    pm3:  { ext: "pm3",  generation: "m3",     version: VERSION_516, machine: "Photon M3", notes: "Photon M3" },
+    pm3n: { ext: "pm3n", generation: "m3",     version: VERSION_517, machine: "Photon Mono 2", notes: "Photon Mono 2" },
+    pm3m: { ext: "pm3m", generation: "m3",     version: VERSION_516, machine: "Photon M3 Max", notes: "Photon M3 Max / Plus class" },
+    pm3r: { ext: "pm3r", generation: "m3",     version: VERSION_517, machine: "Photon M3 Premium", notes: "Photon M3 Premium" },
     pm4m: { ext: "pm4m", generation: "m4",     notes: "Photon Mono M4 class" },
     pm4u: { ext: "pm4u", generation: "m4",     notes: "Photon Mono 4 Ultra class" },
-    pm4n: { ext: "pm4n", generation: "m4",     notes: "Photon Mono 4" },
-    pm5:  { ext: "pm5",  generation: "m5",     notes: "Photon Mono M5" },
-    pm5s: { ext: "pm5s", generation: "m5",     notes: "Photon Mono M5s" },
+    pm4n: { ext: "pm4n", generation: "m4",     version: VERSION_517, machine: "Photon Mono 4", notes: "Photon Mono 4" },
+    pm5:  { ext: "pm5",  generation: "m5",     version: VERSION_517, machine: "Photon Mono M5", notes: "Photon Mono M5" },
+    pm5s: { ext: "pm5s", generation: "m5",     version: VERSION_518, machine: "Photon Mono M5s", notes: "Photon Mono M5s" },
+    m5sp: { ext: "m5sp", generation: "m5",     version: VERSION_518, machine: "Photon Mono M5s Pro", notes: "Photon Mono M5s Pro" },
     pm7:  { ext: "pm7",  generation: "m7",     notes: "Photon Mono M7 class" },
     pm7m: { ext: "pm7m", generation: "m7",     notes: "Photon Mono M7 Pro class" },
     pwsz: { ext: "pwsz", generation: "v3-zip", notes: "Photon Workshop v3 zip container" }
 };
-const ENCODE_FORMATS = new Set(["pm4n"]);
+const ENCODE_FORMATS = new Set(Object.entries(FORMAT_RECORDS)
+    .filter(([, rec]) => rec.version >= VERSION_516)
+    .map(([format]) => format));
 
 function encode(print, progress, renderer) {
     let format = print.settings.device.slaFormat || "pm4n";
     let rec = FORMAT_RECORDS[format];
 
-    if (format === "pm4n") {
+    if (canEncode(format)) {
         if (renderer) {
-            return Promise.resolve(encodePM4N(print, progress, renderer));
+            return Promise.resolve(encodeAnycubic(print, progress, renderer, rec));
         }
         return import('./x_photon.js').then(({ photon }) =>
-            encodePM4N(print, progress, photon));
+            encodeAnycubic(print, progress, photon, rec));
     }
 
     return Promise.reject(new Error([
@@ -50,9 +58,11 @@ function encode(print, progress, renderer) {
     ].join(" ")));
 }
 
-function encodePM4N(print, progress, photon) {
+function encodeAnycubic(print, progress, photon, rec) {
     let layers = [];
     let preview = createPreview(224, 168);
+    let preview2 = rec.version >= VERSION_518 ? createPreview(330, 190) : null;
+    let format = rec.ext;
 
     let { ctx, volume } = renderRasterLayers(print, photon, params => {
         let { index, rendered, bottom, z, ctx } = params;
@@ -61,6 +71,9 @@ function encodePM4N(print, progress, photon) {
         let encoded = encodePW0(raster);
 
         accumulatePreview(preview, rendered.image, width, height);
+        if (preview2) {
+            accumulatePreview(preview2, rendered.image, width, height);
+        }
         layers.push({
             index,
             data: encoded,
@@ -70,10 +83,10 @@ function encodePM4N(print, progress, photon) {
             exposure: bottom ? process.slaBaseOn : process.slaLayerOn,
             z
         });
-    }, progress ? (value) => progress(value * 0.85, "pm4n_encode") : null);
+    }, progress ? (value) => progress(value * 0.85, `${format}_encode`) : null);
 
-    let file = writeAnycubic({ ctx, layers, volume, preview });
-    if (progress) progress(1, "pm4n_write");
+    let file = writeAnycubic({ ctx, layers, volume, preview, preview2, rec });
+    if (progress) progress(1, `${format}_write`);
 
     return { file, layers: layers.length, volume };
 }
@@ -85,9 +98,10 @@ function read(input) {
         throw new Error(`invalid Anycubic mark ${mark}`);
     }
 
+    let version = view.getUint32(12, true);
     let file = {
         mark,
-        version: view.getUint32(12, true),
+        version,
         tableCount: view.getUint32(16, true),
         headerOffset: view.getUint32(20, true),
         softwareOffset: view.getUint32(24, true),
@@ -97,7 +111,9 @@ function read(input) {
         extraOffset: view.getUint32(40, true),
         machineOffset: view.getUint32(44, true),
         layerImageOffset: view.getUint32(48, true),
-        modelOffset: view.getUint32(52, true)
+        modelOffset: version >= VERSION_517 ? view.getUint32(52, true) : 0,
+        subLayerOffset: version >= VERSION_518 ? view.getUint32(56, true) : 0,
+        preview2Offset: version >= VERSION_518 ? view.getUint32(60, true) : 0
     };
 
     return {
@@ -119,11 +135,21 @@ function decodeLayer(view, layer, pixelCount) {
 }
 
 function writeAnycubic(params) {
-    let { ctx, layers, volume, preview } = params;
+    let { ctx, layers, volume, preview, preview2, rec } = params;
     let { device, process, width, height } = ctx;
-    let fileMarkSize = MARK_SIZE + 11 * 4;
+    let version = Number(device.slaFormatVersion || rec.version || VERSION_517);
+    if (version < VERSION_516 || version > VERSION_518) {
+        throw new Error(`Anycubic .${rec.ext} encoder requires version 516-518 (got ${version})`);
+    }
+
+    let fileMarkSize = MARK_SIZE + ({
+        [VERSION_516]: 10,
+        [VERSION_517]: 11,
+        [VERSION_518]: 13
+    }[version] || 11) * 4;
     let headerOffset = fileMarkSize;
-    let headerSize = 16 + 92;
+    let headerLength = version >= VERSION_518 ? 96 : version >= VERSION_517 ? 92 : 84;
+    let headerSize = 16 + headerLength;
     let previewOffset = headerOffset + headerSize;
     let previewData = encodePreview(preview);
     let previewSize = 28 + previewData.length;
@@ -134,12 +160,21 @@ function writeAnycubic(params) {
     let extraOffset = layerDefOffset + layerDefSize;
     let extraSize = 16 + 56;
     let machineOffset = extraOffset + extraSize;
-    let machineSize = 156;
-    let softwareOffset = machineOffset + machineSize;
-    let softwareSize = 164;
-    let modelOffset = softwareOffset + softwareSize;
-    let modelSize = 48;
-    let layerImageOffset = modelOffset + modelSize;
+    let machineSize = version >= VERSION_518 ? 224 : 156;
+    let softwareOffset = version >= VERSION_517 ? machineOffset + machineSize : 0;
+    let softwareSize = version >= VERSION_517 ? 164 : 0;
+    let modelOffset = version >= VERSION_517 ? softwareOffset + softwareSize : 0;
+    let modelSize = version >= VERSION_517 ? 48 : 0;
+    let subLayerOffset = version >= VERSION_518 ? modelOffset + modelSize : 0;
+    let subLayerSize = version >= VERSION_518 ? 24 + layers.length * 44 : 0;
+    let preview2Offset = version >= VERSION_518 ? subLayerOffset + subLayerSize : 0;
+    let preview2Data = preview2 ? encodePreview(preview2) : null;
+    let preview2Size = preview2 ? 28 + preview2Data.length : 0;
+    let layerImageOffset = version >= VERSION_518
+        ? preview2Offset + preview2Size
+        : version >= VERSION_517
+            ? modelOffset + modelSize
+            : machineOffset + machineSize;
     let total = layerImageOffset;
 
     layers.forEach(layer => {
@@ -150,8 +185,8 @@ function writeAnycubic(params) {
 
     let writer = new BinaryWriter(new ArrayBuffer(total));
     writeFileMark(writer, {
-        version: VERSION_517,
-        tableCount: 9,
+        version,
+        tableCount: version >= VERSION_518 ? 11 : version >= VERSION_517 ? 9 : 8,
         headerOffset,
         softwareOffset,
         previewOffset,
@@ -160,10 +195,12 @@ function writeAnycubic(params) {
         extraOffset,
         machineOffset,
         layerImageOffset,
-        modelOffset
+        modelOffset,
+        subLayerOffset,
+        preview2Offset
     });
     writer.seek(headerOffset);
-    writeHeader(writer, { device, process, width, height, layers, volume });
+    writeHeader(writer, { device, process, width, height, layers, volume, version, headerLength });
     writer.seek(previewOffset);
     writePreview(writer, preview, previewData);
     writer.seek(colorTableOffset);
@@ -173,15 +210,27 @@ function writeAnycubic(params) {
     writer.seek(extraOffset);
     writeExtra(writer, process);
     writer.seek(machineOffset);
-    writeMachine(writer, { device, width, height });
-    writer.seek(softwareOffset);
-    writeSoftware(writer);
-    writer.seek(modelOffset);
-    writeModel(writer, { device, process, layers });
+    writeMachine(writer, { device, width, height, version, rec });
+    if (version >= VERSION_517) {
+        writer.seek(softwareOffset);
+        writeSoftware(writer);
+        writer.seek(modelOffset);
+        writeModel(writer, { device, process, layers });
+    }
+    if (version >= VERSION_518) {
+        writer.seek(subLayerOffset);
+        writeSubLayerDefinitions(writer, layers);
+        writer.seek(preview2Offset);
+        writePreview2(writer, preview2, preview2Data);
+    }
     layers.forEach(layer => {
         writer.seek(layer.dataOffset);
         writer.writeBytes(layer.data);
     });
+
+    if (writer.pos !== total) {
+        throw new Error(`Anycubic writer size mismatch (${writer.pos} !== ${total})`);
+    }
 
     return writer.buffer;
 }
@@ -198,15 +247,21 @@ function writeFileMark(writer, mark) {
     writer.writeU32(mark.extraOffset);
     writer.writeU32(mark.machineOffset);
     writer.writeU32(mark.layerImageOffset);
-    writer.writeU32(mark.modelOffset);
+    if (mark.version >= VERSION_517) {
+        writer.writeU32(mark.modelOffset);
+    }
+    if (mark.version >= VERSION_518) {
+        writer.writeU32(mark.subLayerOffset);
+        writer.writeU32(mark.preview2Offset);
+    }
 }
 
 function writeHeader(writer, params) {
-    let { device, process, width, height, layers, volume } = params;
+    let { device, process, width, height, layers, volume, version, headerLength } = params;
     let printTime = Math.round((process.slaBaseLayers * process.slaBaseOn) +
         Math.max(0, layers.length - process.slaBaseLayers) * process.slaLayerOn);
 
-    writer.writeTable("HEADER", 92);
+    writer.writeTable("HEADER", headerLength);
     writer.writeF32(pixelSizeMicrons(device.bedWidth, width));
     writer.writeF32(process.slaSlice);
     writer.writeF32(process.slaLayerOn);
@@ -228,15 +283,29 @@ function writeHeader(writer, params) {
     writer.writeU32(0);
     writer.writeU32(0);
     writer.writeU32(0);
-    writer.writeU16(0);
-    writer.writeU16(0);
-    writer.writeU32(0);
+    if (version >= VERSION_517) {
+        writer.writeU16(0);
+        writer.writeU16(0);
+        writer.writeU32(0);
+    }
+    if (version >= VERSION_518) {
+        writer.writeU32(0);
+    }
 }
 
 function writePreview(writer, preview, data) {
     writer.writeTable("PREVIEW", 28 + data.length);
     writer.writeU32(preview.width);
     writer.writeString("x", 4);
+    writer.writeU32(preview.height);
+    writer.writeBytes(data);
+}
+
+function writePreview2(writer, preview, data) {
+    writer.writeTable("PREVIEW2", 28 + data.length);
+    writer.writeU32(preview.width);
+    writer.writeU16(4293);
+    writer.writeU16(0);
     writer.writeU32(preview.height);
     writer.writeBytes(data);
 }
@@ -284,18 +353,30 @@ function writeExtra(writer, process) {
 }
 
 function writeMachine(writer, params) {
-    let { device, width, height } = params;
+    let { device, width, height, version, rec } = params;
+    let tableLength = version >= VERSION_518 ? 224 : 156;
+    let propertyFields = version >= VERSION_518 ? 15 : version >= VERSION_517 ? 7 : 1;
 
-    writer.writeTable("MACHINE", 156);
-    writer.writeString("Photon Mono 4", 96);
+    writer.writeTable("MACHINE", tableLength);
+    writer.writeString(rec.machine || device.deviceName || "Anycubic Photon", 96);
     writer.writeString("pw0Img", 16);
     writer.writeU32(16);
-    writer.writeU32(7);
+    writer.writeU32(propertyFields);
     writer.writeF32(device.bedWidth);
     writer.writeF32(device.bedDepth);
     writer.writeF32(device.maxHeight || device.bedHeight);
-    writer.writeU32(VERSION_517);
+    writer.writeU32(version);
     writer.writeU32(6506241);
+    if (version >= VERSION_518) {
+        writer.writeF32(pixelSizeMicrons(device.bedWidth, width));
+        writer.writeF32(pixelSizeMicrons(device.bedDepth, height));
+        for (let i=0; i<8; i++) writer.writeU32(0);
+        writer.writeU32(1);
+        writer.writeU32(0);
+        writer.writeU16(width);
+        writer.writeU16(height);
+        for (let i=0; i<4; i++) writer.writeU32(0);
+    }
 }
 
 function writeSoftware(writer) {
@@ -319,6 +400,18 @@ function writeModel(writer, params) {
     writer.writeF32(maxZ);
     writer.writeU32(0);
     writer.writeF32(0);
+}
+
+function writeSubLayerDefinitions(writer, layers) {
+    writer.writeTable("SUBIMGS", 24 + layers.length * 44);
+    writer.writeU32(layers.length);
+    writer.writeU32(1);
+    layers.forEach(layer => {
+        writer.writeU32(layer.dataOffset);
+        writer.writeU32(layer.dataLength);
+        writer.writeU32(layer.nonzero);
+        for (let i=0; i<8; i++) writer.writeF32(0);
+    });
 }
 
 function createPreview(width, height) {
