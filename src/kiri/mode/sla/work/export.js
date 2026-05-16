@@ -68,7 +68,12 @@ export function sla_export(print, online, ondone) {
     }
 
     if (PW.supports(format)) {
-        return PW.encode(format);
+        return PW.encode(print, (progress, message) => {
+            online({ progress, message });
+        }, photon).then(output => {
+            let { file, layers, volume } = output;
+            ondone({ width, height, file, layers, volume }, [file]);
+        });
     }
 
     if (format === 'photon' || format === 'photons') {
