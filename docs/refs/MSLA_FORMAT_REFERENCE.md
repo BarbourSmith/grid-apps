@@ -491,13 +491,13 @@ Each section starts with a 12-byte null-padded table name followed by a 32-bit t
 | RLE4 (PW0) | Nibble-coded | 1-2 (variable) | 4095 (B/W), 15 (gray) | 8 | Optimized variable-length |
 | CTB variable RLE | 7-bit grayscale variable RLE | 1-5 (variable) | 268,435,455 | 7 stored / 8 expanded | CTB v3+ layer data |
 | RLE128 (PhotonS) | Run-Length 128 | 2 (fixed) | 128 | 8 | Length, Color (BE) |
-| RLE+Delim (GOO) | Delimited | 5 (+ delim) | 65535 | 8 | 0x55 + Color + Length16 + 0x0D0A |
+| GOO RLE | Chunked | 1-5 (+ checksum) | 268435455 | 8 | 0x55 stream + inverted checksum, layer CRLF-delimited |
 
 **Performance Comparison:**
 - **RLE1/RLE125/RLE128:** Simple, predictable, easy to implement, but PWS/CBDDLP are bit-plane encodings rather than full grayscale runs
 - **CTB variable RLE:** Better compression and grayscale AA, plus optional seed-derived XOR
 - **Nibble RLE4:** Best compression for grayscale AA, complex encoding
-- **RLE+Delim:** Highest max repeat, overhead from delimiters
+- **GOO RLE:** High max repeat with grayscale support and a per-layer checksum; CRLF only delimits the encoded payload
 
 ---
 
@@ -533,18 +533,30 @@ For each run (2 bytes):
 
 **Extensions:** `.goo`, `.prz`
 **Magic:** "V3.0" + `0x07000000` (BE) + "DLP\0"
-**RLE:** Delimiter-based
+**RLE:** Chunked stream with checksum. The layer payload is followed by a CRLF delimiter, but CRLF is not part of the RLE chunk grammar.
 
 **RLE Format:**
 ```
-Each run (5 bytes):
-  0x55                    Magic byte
-  [color]                 0x00 or 0xFF
-  [length_high]           Big-endian uint16
-  [length_low]
-  0x0D 0x0A               CRLF delimiter
+Layer payload:
+  0x55                    layer RLE magic
+  chunks...               chunk stream
+  checksum                bitwise NOT of byte sum from chunks
 
-Maximum repeat: 65535 pixels
+Chunk byte0:
+  bits 7:6                type
+                           0 = black run (0x00)
+                           1 = grayscale run; gray byte follows byte0
+                           2 = delta from previous pixel
+                           3 = white run (0xFF)
+  bits 5:4                length encoding for non-delta chunks
+                           0 = byte0 low nibble
+                           1 = next byte + low nibble
+                           2 = next two bytes + low nibble
+                           3 = next three bytes + low nibble
+  bits 3:0                low length nibble or delta value
+
+Non-delta maximum repeat: 0x0FFFFFFF pixels.
+Layer record delimiter after payload: 0x0D 0x0A.
 ```
 
 ### CXDLP (Creality)
@@ -659,7 +671,7 @@ PrinterModel = SL1
 **Tier 3 - Advanced Binary:**
 1. **PW0** - Nibble-coded RLE4 (complex but efficient)
 2. **PhotonS** - Big-endian RLE128
-3. **GOO** - Delimiter-based RLE
+3. **GOO** - Chunked RLE with layer checksum
 
 **Tier 4 - Specialized:**
 1. **CTBEncrypted** - Requires AES-256-CBC
