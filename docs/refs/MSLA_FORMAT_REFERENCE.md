@@ -170,6 +170,33 @@ Run length bytes:
 
 If the header encryption seed at `0x64` is non-zero, layer RLE bytes are XORed with a per-layer key stream derived from that seed. The seed is not the direct XOR key.
 
+**CTB Run Examples:**
+```
+Input: 1 white pixel (255)
+Encoded: 7F
+
+Input: 100 white pixels (255)
+Encoded: FF 64
+
+Input: 500 gray pixels (128)
+Encoded: C0 81 F4
+
+Input: 20000 pixels at value 200
+Encoded: E4 C0 4E 20
+```
+
+**CTB Layer XOR Key Schedule:**
+```c
+init = seed * 0x2D83CDAC + 0xD8A83423
+key = (layerIndex * 0x1E1530CD + 0xEC3D47CD) * init
+
+for each RLE byte:
+  xor with byte key[index]
+  after 4 bytes: key += init
+```
+
+CTB grayscale anti-aliasing stores 128 levels: `0x00` is masked, `0x7F` expands to `0xFF`, and intermediate values represent partial exposure.
+
 #### 1.3 CTB v4-5 (Chitubox v4-5)
 
 **Extensions:** `.ctb`, `.gktwo.ctb`
@@ -428,6 +455,20 @@ Each section starts with a 12-byte null-padded table name followed by a 32-bit t
 .pwmo  → PhotonMono
 .pwmb  → PhotonMonoX6K / PhotonM3Plus
 ```
+
+**Photon Mono 4 / `.pm4n` Validation Notes:**
+- UVtools registers `.pm4n` and maps it to `PhotonMono4`, but `GetAvailableVersionsForExtension()` falls through to all Anycubic versions.
+- The bundled PrusaSlicer profile declares `FILEFORMAT_PM4N` but does not include `FILEVERSION_517`.
+- Treat v517 output as a reasonable implementation assumption, not a source-verified fact, until a real Photon Mono 4 fixture confirms it.
+- Fixture validation should verify `ANYCUBIC` at offset `0x00`, version at offset `0x0C`, `HEADER` table length, 32-byte `LayerDef` entries, and whether `SUBIMGS` / `PREVIEW2` are present.
+
+**Anycubic Version Pattern:**
+| Extension | Machine | Version in UVtools |
+|-----------|---------|--------------------|
+| `.pm3n` | PhotonMono2 | 517 |
+| `.pm4n` | PhotonMono4 | fallback: 1, 515, 516, 517, 518 |
+| `.pm5` | PhotonMonoM5 | 517 |
+| `.pm5s` | PhotonMonoM5s | 518 |
 
 #### 2.3 Anycubic ZIP Format (PWSZ)
 
@@ -837,6 +878,16 @@ def decode_ctb_variable_rle(data: bytes, width: int, height: int) -> bytes:
    - Most: ASCII or UTF-8
    - Anet: UTF-16 Big-Endian
    - Always null-terminate and pad
+
+### UVtools Source Cross-References
+
+**CTB:**
+- `UVtools.Core/FileFormats/ChituboxFile.cs`: `DecodeCtbImage`, `EncodeCtbImage`, `LayerRleCryptBuffer`
+- `UVtools.Core/FileFormats/CTBEncryptedFile.cs`: encrypted CTB v4-v5 container and AES handling
+
+**Anycubic:**
+- `UVtools.Core/FileFormats/AnycubicFile.cs`: `FileMark`, `Header`, `LayerDef`, `GetAvailableVersionsForExtension`, `PrinterModel`
+- `PrusaSlicer/printer/Anycubic Photon Mono 4.ini`: declares `FILEFORMAT_PM4N` without an explicit file version
 
 ---
 
