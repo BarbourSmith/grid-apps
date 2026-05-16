@@ -10,8 +10,8 @@
 | Format | Encode | Decode | Extensions | Versions | Profiles | RLE Type | Notes |
 |--------|:------:|:------:|------------|----------|----------|----------|-------|
 | **Chitubox Family** |
-| ChituboxFile | ✓ | ✓ | photon, cbddlp, ctb, gktwo.ctb | 1-5 (def: 5) | No | RLE125 | Most common |
-| CTBEncryptedFile | ✓ | ✓ | ctb, encrypted.ctb | 4-5 (def: 5) | No | RLE125+AES | Encrypted |
+| ChituboxFile | ✓ | ✓ | photon, cbddlp, ctb, gktwo.ctb | 1-5 (def: 5) | No | RLE125 / CTB variable RLE | Most common |
+| CTBEncryptedFile | ✓ | ✓ | ctb, encrypted.ctb | 4-5 (def: 5) | No | CTB variable RLE + AES | Encrypted |
 | PHZFile | ✓ | ✓ | phz | 2 | No | RLE125 | Chitubox PHZ |
 | ChituboxZipFile | ✓ | ✓ | zip | - | No | PNG | G-code based |
 | AnycubicPhotonSFile | ✓ | ✓ | photons | - | No | RLE128 | Legacy Photon S |
@@ -109,7 +109,7 @@ Offset | Size | Type   | Field                    | Notes
 **Extensions:** `.ctb`
 **Magic:** `0x12FD0086` (LE)
 **Version:** 3
-**RLE:** RLE125 (limit: 125 pixels)
+**RLE:** CTB variable-length 7-bit grayscale RLE, optionally XOR-encrypted with a per-layer seed-derived stream
 
 **Header Structure (CORRECTED - matches Chitubox 1.8 fixtures):**
 ```
@@ -141,7 +141,7 @@ Offset | Size | Type   | Field                    | Notes
 0x5C   | 4    | uint32 | AntiAliasLevel           | 1, 2, 4, 8
 0x60   | 2    | uint16 | LightPWM                 | 0-255
 0x62   | 2    | uint16 | BottomLightPWM           | 0-255
-0x64   | 4    | uint32 | Padding                  |
+0x64   | 4    | uint32 | EncryptionSeed           | 0 disables layer RLE XOR
 0x68   | 4    | uint32 | SlicerOffsetAddress      |
 0x6C   | 4    | uint32 | SlicerDataSize           | bytes
 ```
@@ -149,12 +149,32 @@ Offset | Size | Type   | Field                    | Notes
 
 **CRITICAL NOTE:** Previous documentation incorrectly showed 8-byte (double) floats. CTB v3 uses 32-bit floats throughout. This matches Chitubox 1.8 fixtures and actual UVtools implementation.
 
+**CTB Variable RLE Encoding (v3+)**
+
+CTB v3 does not use fixed 2-byte `(color, length)` RLE. It uses a 7-bit grayscale, variable-length run format:
+
+```
+Color byte:
+  bit 7 clear: single pixel, bits 0-6 are grayscale level
+  bit 7 set: run follows, bits 0-6 are grayscale level
+
+Run length bytes:
+  0rrrrrrr                         = 7-bit length, 2-127
+  10rrrrrr rrrrrrrr                = 14-bit length, 128-16383
+  110rrrrr rrrrrrrr rrrrrrrr       = 21-bit length
+  1110rrrr rrrrrrrr rrrrrrrr rrrrrrrr = 28-bit length
+```
+
+8-bit pixels are quantized with `grey7 = pixel >> 1`. When decoding, `grey7 == 0` maps to `0`; otherwise expand with `(grey7 << 1) | 1`, so encoded `0x7F` returns `0xFF`.
+
+If the header encryption seed at `0x64` is non-zero, layer RLE bytes are XORed with a per-layer key stream derived from that seed. The seed is not the direct XOR key.
+
 #### 1.3 CTB v4-5 (Chitubox v4-5)
 
 **Extensions:** `.ctb`, `.gktwo.ctb`
 **Magic:** `0x12FD0106` (LE, v4), `0xFF220810` (LE, GKtwo variant)
 **Versions:** 4, 5 (default: 5)
-**RLE:** RLE125
+**RLE:** CTB variable-length 7-bit grayscale RLE
 
 Same header structure as CTB v3, with additional support for:
 - Per-layer exposure times
@@ -333,7 +353,7 @@ All modern Anycubic formats use **Nibble-coded RLE4** encoding.
 
 ##### 2.2.2 Version 517 Formats
 
-**Extensions:** `.pm3n`, `.pm5`, `.px6s`
+**Extensions:** `.pm3n`, `.pm5`, `.px6s` (`.pm4n` is registered by UVtools but not explicitly version-pinned; treat v517 as an assumption until fixture-verified)
 
 **Machines:**
 - PhotonMono2 (.pm3n)
@@ -341,9 +361,10 @@ All modern Anycubic formats use **Nibble-coded RLE4** encoding.
 - PhotonMonoX6Ks (.px6s)
 
 **New Features:**
-- 7 preview images (vs 2 in v516)
+- Additional preview/model/software metadata compared with earlier versions
 - Preview sizes: 224x168, 330x190
-- Layer table entry size: 92 bytes
+- `HEADER` table length: 92 bytes
+- `LayerDef` entries remain 32 bytes each
 
 ##### 2.2.3 Version 518 Formats
 
@@ -358,26 +379,36 @@ All modern Anycubic formats use **Nibble-coded RLE4** encoding.
 - 9 preview images
 - 11 distinct printer profiles
 - Preview sizes: 224x168, 330x190
-- Layer table entry size: 96 bytes
+- `HEADER` table length: 96 bytes
+- `LayerDef` entries remain 32 bytes each; `SUBIMGS` sublayer records may also be present
 - 15 slicer metadata fields
 
-**Anycubic File Header (v515+):**
+**Anycubic FileMark and Section Table (v515+):**
 ```
 Offset | Size | Type   | Field                    | Notes
 -------|------|--------|--------------------------|------------------
-0x00   | 2    | uint16 | HeaderSize               | bytes
-0x02   | 2    | uint16 | Version                  | 515-518
-0x04   | 4    | float  | BedSizeX                 | mm
-0x08   | 4    | float  | BedSizeY                 | mm
-0x0C   | 4    | float  | BedSizeZ                 | mm
-...
-(remainder similar to v1, with version-specific extensions)
+0x00   | 12   | char[] | Mark                     | "ANYCUBIC" null-padded
+0x0C   | 4    | uint32 | Version                  | 1, 515, 516, 517, 518
+0x10   | 4    | uint32 | NumberOfTables           |
+0x14   | 4    | uint32 | HeaderAddress            | offset to HEADER table
+0x18   | 4    | uint32 | SoftwareAddress          | v517+
+0x1C   | 4    | uint32 | PreviewAddress           |
+0x20   | 4    | uint32 | LayerImageColorTableAddress |
+0x24   | 4    | uint32 | LayerDefinitionAddress   |
+0x28   | 4    | uint32 | ExtraAddress             | v516+
+0x2C   | 4    | uint32 | MachineAddress           | v516+
+0x30   | 4    | uint32 | LayerImageAddress        |
+0x34   | 4    | uint32 | ModelAddress             | v517+
+0x38   | 4    | uint32 | SubLayerDefinitionAddress| v518+
+0x3C   | 4    | uint32 | Preview2Address          | v518+
 ```
+
+Each section starts with a 12-byte null-padded table name followed by a 32-bit table length. The `HEADER` table length is version-dependent: 80 for early versions, 84 for v516, 92 for v517, and 96 for v518.
 
 **Machine Detection (Extension → Machine mapping):**
 ```
 .pm3n  → PhotonMono2
-.pm4n  → PhotonMono4
+.pm4n  → PhotonMono4 (version ambiguous in UVtools; v517 is an implementation assumption pending fixtures)
 .pm5   → PhotonMonoM5
 .pm5s  → PhotonMonoM5s
 .m5sp  → PhotonMonoM5sPro
@@ -408,12 +439,13 @@ Offset | Size | Type   | Field                    | Notes
 |--------|------|-----------|------------|------------|-------|
 | RLE1 (PWS) | Run-Length 1 | 2 (fixed) | 125 | 8 | Color, Length |
 | RLE4 (PW0) | Nibble-coded | 1-2 (variable) | 4095 (B/W), 15 (gray) | 8 | Optimized variable-length |
-| RLE125 (CTB) | Run-Length 125 | 2 (fixed) | 125 | 8 | Color, Length |
+| CTB variable RLE | 7-bit grayscale variable RLE | 1-5 (variable) | 268,435,455 | 7 stored / 8 expanded | CTB v3+ layer data |
 | RLE128 (PhotonS) | Run-Length 128 | 2 (fixed) | 128 | 8 | Length, Color (BE) |
 | RLE+Delim (GOO) | Delimited | 5 (+ delim) | 65535 | 8 | 0x55 + Color + Length16 + 0x0D0A |
 
 **Performance Comparison:**
 - **RLE1/RLE125/RLE128:** Simple, predictable, easy to implement
+- **CTB variable RLE:** Better compression and grayscale AA, plus optional seed-derived XOR
 - **Nibble RLE4:** Best compression for grayscale AA, complex encoding
 - **RLE+Delim:** Highest max repeat, overhead from delimiters
 
@@ -586,7 +618,7 @@ PrinterModel = SL1
 
 ### Essential Algorithms (Pseudocode)
 
-#### RLE125 Decoder (CBDDLP, CTB)
+#### RLE125 Decoder (CBDDLP)
 ```python
 def decode_rle125(data: bytes, width: int, height: int) -> bytes:
     pixels = bytearray(width * height)
@@ -605,7 +637,7 @@ def decode_rle125(data: bytes, width: int, height: int) -> bytes:
     return pixels
 ```
 
-#### RLE125 Encoder
+#### RLE125 Encoder (CBDDLP)
 ```python
 def encode_rle125(pixels: bytes) -> bytes:
     result = bytearray()
@@ -694,6 +726,45 @@ def encode_rle4_nibble(pixels: bytes) -> bytes:
     return result
 ```
 
+#### CTB Variable RLE Decoder
+```python
+def decode_ctb_variable_rle(data: bytes, width: int, height: int) -> bytes:
+    pixels = bytearray(width * height)
+    pixel_pos = 0
+    i = 0
+
+    while i < len(data):
+        color_byte = data[i]
+        i += 1
+
+        grey7 = color_byte & 0x7F
+        color = 0 if grey7 == 0 else (grey7 << 1) | 1
+
+        if (color_byte & 0x80) == 0:
+            stride = 1
+        else:
+            length_byte = data[i]
+            i += 1
+
+            if (length_byte & 0x80) == 0:
+                stride = length_byte
+            elif (length_byte & 0x40) == 0:
+                stride = ((length_byte & 0x3F) << 8) | data[i]
+                i += 1
+            elif (length_byte & 0x20) == 0:
+                stride = ((length_byte & 0x1F) << 16) | (data[i] << 8) | data[i + 1]
+                i += 2
+            else:
+                stride = ((length_byte & 0x0F) << 24) | (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+                i += 3
+
+        for _ in range(stride):
+            pixels[pixel_pos] = color
+            pixel_pos += 1
+
+    return pixels
+```
+
 ### Dependencies by Format
 
 **Minimal (No external libs):**
@@ -736,6 +807,7 @@ def encode_rle4_nibble(pixels: bytes) -> bytes:
    - RLE1/RLE125: max 125 pixels
    - RLE128: max 128 pixels
    - RLE4 nibble: max 4095 (B/W), 15 (grayscale)
+   - CTB variable RLE: variable length, up to 28-bit runs
    - Split longer runs
 
 6. **String Encoding:**
