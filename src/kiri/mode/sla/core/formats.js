@@ -46,6 +46,22 @@ export const SLA_FORMATS = {
         priority: 1,
         family: 'chitubox'
     },
+    goo: {
+        id: 'goo',
+        ext: 'goo',
+        proprietary: true,
+        available: true,
+        priority: 2,
+        family: 'goo'
+    },
+    prz: {
+        id: 'prz',
+        ext: 'prz',
+        proprietary: true,
+        available: true,
+        priority: 2,
+        family: 'goo'
+    },
     pw0: {
         id: 'pw0',
         ext: 'pw0',
