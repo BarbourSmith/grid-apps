@@ -100,8 +100,10 @@ def decode_ctb_rle(data: bytes, width: int, height: int) -> bytes:
         color_byte = data[i]
         i += 1
 
-        # Extract 7-bit color
-        color = (color_byte & 0x7F) << 1  # Expand back to 8-bit
+        # Extract 7-bit color and expand back to 8-bit.
+        # Non-zero levels map to odd values so 0x7F becomes 0xFF.
+        grey7 = color_byte & 0x7F
+        color = 0 if grey7 == 0 else (grey7 << 1) | 1
 
         # Check if run follows (bit 7 set)
         if (color_byte & 0x80) == 0:
@@ -140,7 +142,7 @@ def decode_ctb_rle(data: bytes, width: int, height: int) -> bytes:
 
 #### Encryption (Optional)
 
-If `HeaderSettings.EncryptionKey > 0`, RLE data is XORed with a per-layer key:
+If the CTB header encryption seed is non-zero, RLE data is XORed with a per-layer key stream derived from that seed:
 
 **Encryption Algorithm (from ChituboxFile.cs:2227-2248):**
 ```c
@@ -222,18 +224,14 @@ Encoded: C0 81 F4
 **Example 4: Run of 20000 pixels**
 ```
 Input: 20000 pixels at value 200
-Encoded: E4 C4 E2 20
+Encoded: E4 C0 4E 20
   - grey7 = 200 >> 1 = 100 = 0x64
   - stride = 20000 = 0x4E20
   - 20000 > 16383, so 3-byte length
   - color: 0x64 | 0x80 = 0xE4
   - length encoding: 0x4E20 with 0xC0 prefix
-    - byte 0: (0x4E20 >> 16) | 0xC0 = 0x00 | 0xC0 = 0xC0
-    - Wait, let me recalculate...
-    - Actually 20000 = 0x4E20
-    - High nibble: 0x4, middle: 0xE, low: 0x20
-    - Prefix: ((0x4E20 >> 16) & 0x1F) | 0xC0 = 0x00 | 0xC0 = 0xC0
-    - Byte 1: 0x4E20 >> 8 = 0x4E
+    - Byte 0: ((0x4E20 >> 16) & 0x1F) | 0xC0 = 0xC0
+    - Byte 1: (0x4E20 >> 8) & 0xFF = 0x4E
     - Byte 2: 0x4E20 & 0xFF = 0x20
   - Output: [0xE4] [0xC0] [0x4E] [0x20] (4 bytes)
 ```
@@ -267,7 +265,7 @@ Encoded: E4 C4 E2 20
    - Apply encryption if required
 
 3. **Encryption Handling:**
-   - Always check `HeaderSettings.EncryptionKey`
+   - Always check the CTB header encryption seed
    - If non-zero, decrypt before RLE decode
    - Use layer-specific key derivation
 
@@ -357,14 +355,17 @@ if (extension == "pm4n") {
 **For Validation:**
 1. Obtain real .pm4n fixture files from PhotonMono4 printer
 2. Decode header and check `FileMarkSettings.Version` value
-3. Verify layer table structure (92 bytes = v517, 96 bytes = v518)
-4. Document actual version found in fixtures
+3. Verify header table length (92 bytes = v517, 96 bytes = v518)
+4. Verify layer definition entries remain 32 bytes each; v518 may also include `SUBIMGS` sublayer entries
+5. Document actual version found in fixtures
 
 **Fixture Verification Checklist:**
 - [ ] Acquire .pm4n file from PhotonMono4
-- [ ] Read offset 0x02 (uint16 Version field)
-- [ ] Check layer table entry size
-- [ ] Verify preview count (2 = v515/516, 7 = v517, 9 = v518)
+- [ ] Verify file mark starts with ASCII `ANYCUBIC`
+- [ ] Read version at offset 0x0C (little-endian uint32 in the `FileMark`)
+- [ ] Check `HEADER` table length (92 = v517, 96 = v518)
+- [ ] Check layer definition entries are 32 bytes each
+- [ ] Check whether `SUBIMGS` and `PREVIEW2` tables are present
 - [ ] Document findings
 
 ### Comparison with Similar Extensions
