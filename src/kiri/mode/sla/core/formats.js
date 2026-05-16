@@ -46,6 +46,20 @@ export const SLA_FORMATS = {
         priority: 1,
         family: 'chitubox'
     },
+    pw0: {
+        id: 'pw0',
+        ext: 'pw0',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pwx: {
+        id: 'pwx',
+        ext: 'pwx',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
     pwmo: {
         id: 'pwmo',
         ext: 'pwmo',
@@ -60,9 +74,44 @@ export const SLA_FORMATS = {
         available: false,
         family: 'photon-workshop'
     },
+    pwms: {
+        id: 'pwms',
+        ext: 'pwms',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pwmx: {
+        id: 'pwmx',
+        ext: 'pwmx',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
     pwmb: {
         id: 'pwmb',
         ext: 'pwmb',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pwsq: {
+        id: 'pwsq',
+        ext: 'pwsq',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    px6s: {
+        id: 'px6s',
+        ext: 'px6s',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm3: {
+        id: 'pm3',
+        ext: 'pm3',
         proprietary: true,
         available: false,
         family: 'photon-workshop'
@@ -74,9 +123,72 @@ export const SLA_FORMATS = {
         available: false,
         family: 'photon-workshop'
     },
+    pm3m: {
+        id: 'pm3m',
+        ext: 'pm3m',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm3r: {
+        id: 'pm3r',
+        ext: 'pm3r',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm4m: {
+        id: 'pm4m',
+        ext: 'pm4m',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm4u: {
+        id: 'pm4u',
+        ext: 'pm4u',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
     pm4n: {
         id: 'pm4n',
         ext: 'pm4n',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm5: {
+        id: 'pm5',
+        ext: 'pm5',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm5s: {
+        id: 'pm5s',
+        ext: 'pm5s',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm7: {
+        id: 'pm7',
+        ext: 'pm7',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pm7m: {
+        id: 'pm7m',
+        ext: 'pm7m',
+        proprietary: true,
+        available: false,
+        family: 'photon-workshop'
+    },
+    pwsz: {
+        id: 'pwsz',
+        ext: 'pwsz',
         proprietary: true,
         available: false,
         family: 'photon-workshop'

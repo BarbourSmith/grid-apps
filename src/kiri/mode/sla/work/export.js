@@ -67,8 +67,7 @@ export function sla_export(print, online, ondone) {
         });
     }
 
-    if (format === 'pwmo' || format === 'pwma' || format === 'pwmb' ||
-        format === 'pm3n' || format === 'pm4n') {
+    if (PW.supports(format)) {
         return PW.encode(format);
     }
 
