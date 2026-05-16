@@ -155,7 +155,7 @@ export const SLA_FORMATS = {
         id: 'pm4n',
         ext: 'pm4n',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pm5: {
