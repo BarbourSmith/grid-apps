@@ -52,6 +52,7 @@ export function renderRasterLayers(print, renderer, onlayer, progress) {
                     throw error;
                 }
                 useWasm = false;
+                console.warn("SLA raster WASM failed; falling back to JS rasterizer", error);
             }
         }
         if (!useWasm) {
