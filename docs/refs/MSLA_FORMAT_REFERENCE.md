@@ -1,7 +1,7 @@
 # mSLA File Format Reference
 
 **Generated:** 2026-05-16
-**Total Formats:** 32
+**Total Formats:** 31 registered in UVtools `AvailableFormats` (plus an unregistered CXDLPv1 implementation)
 
 ---
 
@@ -16,16 +16,17 @@
 | ChituboxZipFile | ✓ | ✓ | zip | - | No | PNG | G-code based |
 | AnycubicPhotonSFile | ✓ | ✓ | photons | - | No | RLE128 | Legacy Photon S |
 | **Anycubic Family - Legacy (v1, v515-516)** |
-| AnycubicFile (PWS) | ✓ | ✓ | pws, pwx | 1 | Yes (22) | RLE1 (125) | PhotonS, PhotonX |
-| AnycubicFile (PW0) | ✓ | ✓ | pw0 | 1 | Yes (22) | Nibble RLE4 | PhotonZero |
+| AnycubicFile (PWS) | ✓ | ✓ | pws | 1 | Yes (22) | 1-byte bit-plane RLE125 | PhotonS |
+| AnycubicFile (PW0/PWX) | ✓ | ✓ | pw0, pwx | 1 | Yes (22) | Nibble RLE4 | PhotonZero, PhotonX |
 | **Anycubic Family - Modern (v515-518)** |
-| AnycubicFile (v515) | ✓ | ✓ | pwmx, pwmo, dl2p, pwmb, pmx2 | 515-517 | Yes (22) | Nibble RLE4 | Mono series |
+| AnycubicFile (v515-v516) | ✓ | ✓ | dlp, pwmx, pwmo, pwms, pmsq, pwma, pm3, pm3m | varies | Yes (22) | Nibble RLE4 | Ultra, Mono, M3 family |
+| AnycubicFile (v515-v517) | ✓ | ✓ | dl2p, pwmb, pmx2, pm3r | varies | Yes (22) | Nibble RLE4 | D2, X2, M3 Plus/Premium |
 | AnycubicFile (v517) | ✓ | ✓ | pm3n, pm5, px6s | 517 | Yes (22) | Nibble RLE4 | Mono 2, X6Ks, M5 |
 | AnycubicFile (v518) | ✓ | ✓ | pm5s, m5sp | 518 | Yes (22) | Nibble RLE4 | Mono M5s/Pro |
-| AnycubicFile (all) | ✓ | ✓ | dlp, pwms, pwma, pmsq, pm3, pm3m, pm3r, pwc | varies | Yes (22) | Nibble RLE4 | Additional models |
+| AnycubicFile (unversioned fallback) | ✓ | ✓ | pm4n, pwc | 1, 515-518 | Yes (22) | Nibble RLE4 | Registered but not explicitly version-pinned |
 | AnycubicZipFile | ✓ | ✓ | pm4u, pm7, pm7m, pwsz, pp1, pp1m | - | No | PNG | ZIP with JSON |
 | **Creality Family** |
-| CrealityCXDLPv1File | ✓ | ✓ | v1.cxdlp | 1 | No | RLE | Legacy |
+| CrealityCXDLPv1File | ✓ | ✓ | v1.cxdlp | 1 | No | RLE | Legacy implementation present but not registered in `AvailableFormats` |
 | CrealityCXDLPFile | ✓ | ✓ | cxdlp | 2-3 (def: 3) | Yes | RLE | HALOT series |
 | CrealityCXDLPv4File | ✓ | ✓ | cxdlpv4 | 4 | Yes | RLE | Current |
 | **Other Binary Formats** |
@@ -188,26 +189,30 @@ Same header structure as CTB v3, with additional support for:
 
 ##### 2.1.1 PWS (Photon / Photon S)
 
-**Extensions:** `.pws`, `.pwx`
+**Extensions:** `.pws`
 **Version:** 1
 **RLE:** RLE1 (limit: 125)
-**Machines:** PhotonS, PhotonX
+**Machines:** PhotonS
 
 **RLE1 Encoding (PWS):**
 ```
-For each run (2 bytes):
-  byte[0] = color (0x00 = black, 0xFF = white)
-  byte[1] = length (1-125)
+For each run (1 byte):
+  bit 7    = white/on flag
+  bits 0-6 = repeat count
+
+Runs are emitted per anti-aliasing bit-plane and then accumulated back to
+8-bit grayscale. UVtools' encoder splits runs at 0x7D (125), although the
+stored count field is 7 bits.
 
 Constant: RLE1EncodingLimit = 0x7D (125)
 ```
 
-##### 2.1.2 PW0 (Photon Zero) - CORRECTED
+##### 2.1.2 PW0/PWX (Photon Zero / Photon X) - CORRECTED
 
-**Extensions:** `.pw0`
+**Extensions:** `.pw0`, `.pwx`
 **Version:** 1
 **RLE:** Nibble-coded RLE4 (limit: 4095)
-**Machine:** PhotonZero
+**Machines:** PhotonZero, PhotonX
 
 **Nibble-Coded RLE4 Encoding (CORRECTED from UVtools implementation):**
 
@@ -332,9 +337,12 @@ Gray (0xAA) run of 5 pixels:
 
 All modern Anycubic formats use **Nibble-coded RLE4** encoding.
 
-##### 2.2.1 Version 515-516 Formats
+##### 2.2.1 Version-Mapped Formats Before v518
 
-**Extensions:** `.pwmx`, `.pwmo`, `.dl2p`, `.pwmb`, `.pmx2`, `.dlp`, `.pwms`, `.pwma`, `.pmsq`, `.pm3`, `.pm3m`, `.pm3r`
+**Extension version sets from UVtools `GetAvailableVersionsForExtension`:**
+- `.pwmx`, `.pwmo`, `.pwms`, `.pmsq`, `.dlp`: v1, v515, v516
+- `.pwma`, `.pm3`, `.pm3m`: v515, v516
+- `.pwmb`, `.dl2p`, `.pmx2`, `.pm3r`: v515, v516, v517
 
 **Machines:**
 - PhotonMono, PhotonMonoX, PhotonMonoX2
@@ -359,29 +367,30 @@ All modern Anycubic formats use **Nibble-coded RLE4** encoding.
 - PhotonMono2 (.pm3n)
 - PhotonMonoM5 (.pm5)
 - PhotonMonoX6Ks (.px6s)
+- PhotonMono4 (.pm4n) is mapped as a machine, but its source and PrusaSlicer profile omit an explicit file version
 
 **New Features:**
-- Additional preview/model/software metadata compared with earlier versions
-- Preview sizes: 224x168, 330x190
+- `SOFTWARE` and `MODEL` sections compared with earlier versions
+- `MACHINE` property field count rises to 7
+- Thumbnail defaults are 224x168 and 330x190; v517 writes the first `PREVIEW` table
 - `HEADER` table length: 92 bytes
 - `LayerDef` entries remain 32 bytes each
 
 ##### 2.2.3 Version 518 Formats
 
-**Extensions:** `.pm5s`, `.m5sp`, `.pwc`
+**Extensions:** `.pm5s`, `.m5sp` (`.pwc` is registered as Anycubic Custom Machine but falls through to all available versions)
 
 **Machines:**
 - PhotonMonoM5s (.pm5s)
 - PhotonMonoM5sPro (.m5sp)
-- AnycubicCustomMachine (.pwc)
 
 **New Features:**
-- 9 preview images
-- 11 distinct printer profiles
+- 11 FileMark table entries
+- second `PREVIEW2` table may be present
 - Preview sizes: 224x168, 330x190
 - `HEADER` table length: 96 bytes
 - `LayerDef` entries remain 32 bytes each; `SUBIMGS` sublayer records may also be present
-- 15 slicer metadata fields
+- `MACHINE` property field count rises to 15
 
 **Anycubic FileMark and Section Table (v515+):**
 ```
@@ -437,14 +446,14 @@ Each section starts with a 12-byte null-padded table name followed by a 32-bit t
 
 | Format | Name | Bytes/Run | Max Repeat | Color Bits | Notes |
 |--------|------|-----------|------------|------------|-------|
-| RLE1 (PWS) | Run-Length 1 | 2 (fixed) | 125 | 8 | Color, Length |
+| RLE1/RLE125 (PWS/CBDDLP) | Bit-plane run-length | 1 (fixed) | 125 encoded / 127 stored | 1 per AA plane | bit 7 on/off, low 7 bits repeat |
 | RLE4 (PW0) | Nibble-coded | 1-2 (variable) | 4095 (B/W), 15 (gray) | 8 | Optimized variable-length |
 | CTB variable RLE | 7-bit grayscale variable RLE | 1-5 (variable) | 268,435,455 | 7 stored / 8 expanded | CTB v3+ layer data |
 | RLE128 (PhotonS) | Run-Length 128 | 2 (fixed) | 128 | 8 | Length, Color (BE) |
 | RLE+Delim (GOO) | Delimited | 5 (+ delim) | 65535 | 8 | 0x55 + Color + Length16 + 0x0D0A |
 
 **Performance Comparison:**
-- **RLE1/RLE125/RLE128:** Simple, predictable, easy to implement
+- **RLE1/RLE125/RLE128:** Simple, predictable, easy to implement, but PWS/CBDDLP are bit-plane encodings rather than full grayscale runs
 - **CTB variable RLE:** Better compression and grayscale AA, plus optional seed-derived XOR
 - **Nibble RLE4:** Best compression for grayscale AA, complex encoding
 - **RLE+Delim:** Highest max repeat, overhead from delimiters
@@ -618,43 +627,57 @@ PrinterModel = SL1
 
 ### Essential Algorithms (Pseudocode)
 
-#### RLE125 Decoder (CBDDLP)
+#### RLE125 Bit-Plane Decoder (CBDDLP/PWS)
 ```python
-def decode_rle125(data: bytes, width: int, height: int) -> bytes:
-    pixels = bytearray(width * height)
-    pixel_index = 0
+def decode_rle125_bitplanes(data: bytes, width: int, height: int, aa: int = 1) -> bytes:
+    levels = bytearray(width * height)
     data_index = 0
 
-    while data_index < len(data):
-        color = data[data_index]
-        length = data[data_index + 1]
-        data_index += 2
+    for _plane in range(aa):
+        pixel_index = 0
+        while pixel_index < len(levels):
+            code = data[data_index]
+            data_index += 1
 
-        for _ in range(length):
-            pixels[pixel_index] = color
-            pixel_index += 1
+            length = code & 0x7F
+            if code & 0x80:
+                for i in range(length):
+                    levels[pixel_index + i] += 1
+
+            pixel_index += length
+
+    pixels = bytearray(len(levels))
+    scale = 256 // aa
+    for i, level in enumerate(levels):
+        value = level * scale
+        pixels[i] = value - 1 if value else 0
 
     return pixels
 ```
 
-#### RLE125 Encoder (CBDDLP)
+#### RLE125 Bit-Plane Encoder (Single Plane)
 ```python
-def encode_rle125(pixels: bytes) -> bytes:
+def encode_rle125_bitplane(bits: list[bool]) -> bytes:
     result = bytearray()
-    i = 0
+    run_on = False
+    run = 0
 
-    while i < len(pixels):
-        color = pixels[i]
-        length = 1
+    def flush():
+        nonlocal run
+        if run:
+            result.append(run | (0x80 if run_on else 0))
+            run = 0
 
-        while (i + length < len(pixels) and
-               pixels[i + length] == color and
-               length < 125):
-            length += 1
+    for bit in bits:
+        if bit == run_on and run < 0x7D:
+            run += 1
+            continue
 
-        result.append(color)
-        result.append(length)
-        i += length
+        flush()
+        run_on = bit
+        run = 1
+
+    flush()
 
     return result
 ```
@@ -883,4 +906,3 @@ License: AGPL-3.0
 
 **Document Version:** 2.0
 **Generated:** 2026-05-16
-

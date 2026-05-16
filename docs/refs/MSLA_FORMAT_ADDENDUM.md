@@ -11,6 +11,10 @@
 ### Previous (Incorrect) Description
 "RLE125: Simple 2-byte fixed format (color, length), max 125 pixels"
 
+This was doubly misleading: CTB does not use RLE125, and UVtools' CBDDLP/PWS
+RLE125 implementation is a 1-byte bit-plane run format, not a two-byte
+`(color, length)` pair.
+
 ### Actual Implementation (from ChituboxFile.cs:825-908)
 
 CTB uses a **7-bit grayscale variable-length RLE** with optional encryption, NOT simple RLE125.
@@ -236,9 +240,9 @@ Encoded: E4 C0 4E 20
   - Output: [0xE4] [0xC0] [0x4E] [0x20] (4 bytes)
 ```
 
-#### Key Differences from Simple RLE125
+#### Key Differences from the Previous Two-Byte Description
 
-| Feature | Simple RLE125 | CTB Variable RLE |
+| Feature | Previous two-byte description | CTB Variable RLE |
 |---------|---------------|------------------|
 | **Color depth** | 8-bit (0-255) | 7-bit (0-127) |
 | **Max run (1-byte)** | 125 | 127 |
@@ -316,12 +320,20 @@ public override uint[] GetAvailableVersionsForExtension(string? extension)
 // AvailableVersions = [VERSION_1, VERSION_515, VERSION_516, VERSION_517, VERSION_518]
 ```
 
+**PrusaSlicer Profile:**
+```ini
+# PrusaSlicer/printer/Anycubic Photon Mono 4.ini
+FILEFORMAT_PM4N
+# No FILEVERSION_517 entry is present.
+```
+
 ### The Ambiguity
 
 **`.pm4n` extension:**
 - ✓ Registered as valid extension
 - ✓ Maps to PhotonMono4 machine
 - ✗ **NOT** explicitly assigned to any version in `GetAvailableVersionsForExtension`
+- ✗ PrusaSlicer profile declares `FILEFORMAT_PM4N` but does not declare `FILEVERSION_517`
 - Returns all versions: `[1, 515, 516, 517, 518]`
 
 ### Possible Interpretations
@@ -335,7 +347,7 @@ public override uint[] GetAvailableVersionsForExtension(string? extension)
 **User's current implementation treats `.pm4n` as v517**, which is:
 - ✓ Consistent with similar naming (.pm3n, .pm5 are v517)
 - ✓ Logical based on product generation
-- ⚠️ **UNVERIFIED** by UVtools code (could be any version)
+- ⚠️ **UNVERIFIED** by UVtools code/profile metadata (could be any version)
 
 ### Recommendations
 
@@ -414,13 +426,14 @@ if (extension == "pm4n") {
 - Extension mapping: `AnycubicFile.cs:1155-1191` (GetAvailableVersionsForExtension)
 - Machine detection: `AnycubicFile.cs:1731-1733` (FileEndsWith check)
 - Version constants: `AnycubicFile.cs:30-33` (VERSION_515-518)
+- Photon Mono 4 PrusaSlicer profile: `PrusaSlicer/printer/Anycubic Photon Mono 4.ini` (`FILEFORMAT_PM4N`, no `FILEVERSION_517`)
 
 ---
 
 ## Summary
 
 **CTB RLE:**
-- ❌ Previous: Simple RLE125 (2 bytes/run, max 125)
+- ❌ Previous: Incorrectly described as simple two-byte RLE125
 - ✅ Correct: Variable-length 7-bit grayscale RLE (1-5 bytes/run, max 268M, optional encryption)
 
 **.pm4n Version:**
