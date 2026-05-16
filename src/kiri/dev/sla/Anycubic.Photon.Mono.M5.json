@@ -8,8 +8,8 @@
         "max_height": 200,
         "resolution_x": 11520,
         "resolution_y": 5120,
-        "sla_format": "pm5s",
-        "sla_file_ext": "pm5s",
-        "sla_format_version": 518
+        "sla_format": "pm5",
+        "sla_file_ext": "pm5",
+        "sla_format_version": 517
     }
 }

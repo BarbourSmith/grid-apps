@@ -64,77 +64,98 @@ export const SLA_FORMATS = {
         id: 'pwmo',
         ext: 'pwmo',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pwma: {
         id: 'pwma',
         ext: 'pwma',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pwms: {
         id: 'pwms',
         ext: 'pwms',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pwmx: {
         id: 'pwmx',
         ext: 'pwmx',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pwmb: {
         id: 'pwmb',
         ext: 'pwmb',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
-    pwsq: {
-        id: 'pwsq',
-        ext: 'pwsq',
+    pmsq: {
+        id: 'pmsq',
+        ext: 'pmsq',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     px6s: {
         id: 'px6s',
         ext: 'px6s',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pm3: {
         id: 'pm3',
         ext: 'pm3',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pm3n: {
         id: 'pm3n',
         ext: 'pm3n',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pm3m: {
         id: 'pm3m',
         ext: 'pm3m',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pm3r: {
         id: 'pm3r',
         ext: 'pm3r',
         proprietary: true,
-        available: false,
+        available: true,
+        family: 'photon-workshop'
+    },
+    dl2p: {
+        id: 'dl2p',
+        ext: 'dl2p',
+        proprietary: true,
+        available: true,
+        family: 'photon-workshop'
+    },
+    pmx2: {
+        id: 'pmx2',
+        ext: 'pmx2',
+        proprietary: true,
+        available: true,
+        family: 'photon-workshop'
+    },
+    dlp: {
+        id: 'dlp',
+        ext: 'dlp',
+        proprietary: true,
+        available: true,
         family: 'photon-workshop'
     },
     pm4m: {
@@ -162,14 +183,21 @@ export const SLA_FORMATS = {
         id: 'pm5',
         ext: 'pm5',
         proprietary: true,
-        available: false,
+        available: true,
         family: 'photon-workshop'
     },
     pm5s: {
         id: 'pm5s',
         ext: 'pm5s',
         proprietary: true,
-        available: false,
+        available: true,
+        family: 'photon-workshop'
+    },
+    m5sp: {
+        id: 'm5sp',
+        ext: 'm5sp',
+        proprietary: true,
+        available: true,
         family: 'photon-workshop'
     },
     pm7: {
