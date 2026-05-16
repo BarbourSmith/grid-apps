@@ -20,6 +20,27 @@ function init(worker) {
     // console.log({ INIT_SLA: worker });
 }
 
+export function ensureSLAMemory(required) {
+    let wasm = SLA.wasm;
+    let available = wasm.memory.buffer.byteLength;
+
+    if (available >= required) {
+        return;
+    }
+
+    let page = 65536;
+    let pages = Math.ceil((required - available) / page);
+    try {
+        wasm.memory.grow(pages);
+    } catch (error) {
+        let growError = new Error(`SLA WASM memory grow failed: need ${required} bytes, have ${available} bytes`);
+        growError.code = "SLA_WASM_MEMORY";
+        growError.cause = error;
+        throw growError;
+    }
+    wasm.heap = new Uint8Array(wasm.memory.buffer);
+}
+
 // runs in worker. would usually be in src/mode/sla/prepare.js
 // but the SLA driver skips the prepare step because there is no path routing
 async function sla_prepare(widgets, settings, update) {

@@ -30,9 +30,10 @@ export function renderRasterLayers(print, renderer, onlayer, progress) {
     let { process, widgets, width, height, scaleX, scaleY, layermax } = ctx;
     let volume = 0;
     let count = 0;
+    let useWasm = renderer.renderLayerWasm !== undefined;
 
     for (let index=0; index<layermax; index++) {
-        let rendered = renderer.renderLayerWasm({
+        let params = {
             index,
             width,
             height,
@@ -40,7 +41,22 @@ export function renderRasterLayers(print, renderer, onlayer, progress) {
             scaleX,
             scaleY,
             masks: []
-        });
+        };
+        let rendered;
+
+        if (useWasm) {
+            try {
+                rendered = renderer.renderLayerWasm(params);
+            } catch (error) {
+                if (error.code !== "SLA_WASM_MEMORY" || !renderer.renderLayer) {
+                    throw error;
+                }
+                useWasm = false;
+            }
+        }
+        if (!useWasm) {
+            rendered = renderer.renderLayer(params);
+        }
         if (rendered.end) break;
 
         volume += rendered.area * process.slaSlice;
