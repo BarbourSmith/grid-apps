@@ -104,6 +104,7 @@ function device_from_code(code,mode) {
         slaFormatVersion: valueOf(set.sla_format_version, 1),
         slaMachineEditable: valueOf(set.sla_machine_editable, false),
         slaMachineName: valueOf(set.sla_machine_name, ''),
+        slaMotion: valueOf(set.sla_motion, ''),
         deviceZMax: valueOf(set.z_move_max, 0),
         gcodeTime: valueOf(set.time_factor, 1),
         maxHeight: valueOf(set.build_height || set.max_height, 150),
