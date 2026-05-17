@@ -32,7 +32,7 @@
 | **Other Binary Formats** |
 | AnetFile | ✓ | ✓ | n4, n7 | 3 | Yes (N4/N7) | RLE | Anet printers |
 | FDGFile | ✓ | ✓ | fdg | 2 | No | RLE | Voxelab |
-| GooFile | ✓ | ✓ | goo, prz | - | No | RLE+delim | Elegoo/Phrozen |
+| GooFile | ✓ | ✓ | goo, prz | - | No | Chunked RLE + checksum | Elegoo/Phrozen |
 | LGSFile | ✓ | ✓ | lgs, lgs30, lgs120, lgs4k | - | Yes | Struct | Longer Orange |
 | MDLPFile | ✓ | ✓ | mdlp | 1 | No | Vector | Makerbase MKS |
 | GR1File | ✓ | ✓ | gr1 | - | No | Vector | GR Workshop |
@@ -558,6 +558,8 @@ Chunk byte0:
 Non-delta maximum repeat: 0x0FFFFFFF pixels.
 Layer record delimiter after payload: 0x0D 0x0A.
 ```
+
+**Tilt-vat motion:** Mars 5 Ultra and Saturn 4 Ultra GOO files are treated as tilt-vat machines. UVtools identifies them by machine name and substitutes tiny synthetic motion values before encode: lift height `0.05`, lift speed `0.05`, retract height `0`, retract speed `0.05`, with about 4 seconds of motor time in print-time estimates. Kiri models this as `sla_motion: "tilt"` on the device profile instead of overloading user peel distance/speed fields.
 
 ### CXDLP (Creality)
 
