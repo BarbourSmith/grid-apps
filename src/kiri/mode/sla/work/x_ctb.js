@@ -3,6 +3,7 @@
 import { JSZip } from '../../../../ext/jszip-esm.js';
 import { PNG } from '../../../../ext/pngjs.esm.js';
 import { imageToRowMajor, renderRasterLayers, round } from './raster.js';
+import { ctbLayerCrypt } from './x_ctb_crypto.js';
 
 const CTB_V3_MAGIC = 0x12fd0086;
 const HEADER_SIZE = 0x70;
@@ -715,37 +716,11 @@ function requireBytes(input, offset, length) {
 }
 
 function decipher(seed, layerIndex, input) {
-    if (!seed) return input.slice();
-
-    let output = new Uint8Array(input.length);
-    let keyring = newKeyring(seed, layerIndex);
-    for (let i=0; i<input.length; i++) {
-        output[i] = input[i] ^ keyring.next();
-    }
-    return output;
+    return ctbLayerCrypt(seed, layerIndex, input);
 }
 
 function encipher(seed, layerIndex, input) {
-    return decipher(seed, layerIndex, input);
-}
-
-function newKeyring(seed, layerIndex) {
-    let init = (Math.imul(seed >>> 0, 0x2d83cdac) + 0xd8a83423) >>> 0;
-    let keySeed = (Math.imul(layerIndex >>> 0, 0x1e1530cd) + 0xec3d47cd) >>> 0;
-    let key = Math.imul(keySeed, init) >>> 0;
-    let index = 0;
-
-    return {
-        next() {
-            let byte = (key >>> (8 * index)) & 0xff;
-            index++;
-            if ((index & 3) === 0) {
-                key = (key + init) >>> 0;
-                index = 0;
-            }
-            return byte;
-        }
-    };
+    return ctbLayerCrypt(seed, layerIndex, input);
 }
 
 function imageToPNG(image, width, height) {

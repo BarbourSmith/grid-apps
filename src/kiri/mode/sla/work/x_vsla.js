@@ -1,6 +1,7 @@
 /** Copyright Stewart Allen <sa@grid.space> -- All Rights Reserved */
 
 import { JSZip } from '../../../../ext/jszip-esm.js';
+import { createLayerMetadata, createProcessMetadata, round } from './meta.js';
 
 const FORMAT = "vsla";
 const MIME = "application/vnd.gridspace.vsla+zip";
@@ -18,7 +19,7 @@ function encode(print, progress) {
     let layers = [];
     let volume = 0;
     for (let index=0; index<layermax; index++) {
-        let layer = collectLayer({ index, widgets, process });
+        let layer = collectLayer({ index, widgets, device, process });
         volume += layer.area * process.slaSlice;
         layers.push(layer);
         if (progress) progress((index / layermax) * 0.7, "vector_gen");
@@ -49,7 +50,7 @@ function encode(print, progress) {
 }
 
 function collectLayer(params) {
-    let { index, widgets, process } = params;
+    let { index, widgets, device, process } = params;
     let polygons = [];
     let area = 0;
     let z = process.slaFirstOffset + process.slaSlice * index;
@@ -74,11 +75,14 @@ function collectLayer(params) {
         }
     });
 
+    let layerMeta = createLayerMetadata(device, process, index, z, area);
+
     return {
         index,
-        z: round(z),
-        area: round(area),
+        z: layerMeta.z,
+        area: layerMeta.area,
         file: `layers/${index.toString().padStart(6, "0")}.svg`,
+        process: layerMeta,
         polygons
     };
 }
@@ -91,7 +95,8 @@ function createManifest(params) {
             z: layer.z,
             area: layer.area,
             file: layer.file,
-            empty: layer.polygons.length === 0
+            empty: layer.polygons.length === 0,
+            process: layer.process
         };
     });
 
@@ -125,18 +130,7 @@ function createManifest(params) {
         layerCount: layers.length,
         volume: round(volume),
         process: {
-            bottomLayers: process.slaBaseLayers,
-            exposure: process.slaLayerOn,
-            bottomExposure: process.slaBaseOn,
-            lightOffDelay: process.slaLayerOff,
-            bottomLightOffDelay: process.slaBaseOff,
-            liftHeight: process.slaPeelDist,
-            bottomLiftHeight: process.slaBasePeelDist,
-            liftSpeed: process.slaPeelLiftRate * 60,
-            bottomLiftSpeed: process.slaBasePeelLiftRate * 60,
-            retractSpeed: process.slaPeelDropRate * 60,
-            firstLayerOffset: process.slaFirstOffset,
-            antiAlias: process.slaAntiAlias
+            ...createProcessMetadata(device, process)
         },
         layers: layerList
     };
@@ -150,9 +144,10 @@ function createLayerSVG(params) {
         return `  <path fill="#000" fill-rule="evenodd" d="${polyToPath(poly, device)}"/>`;
     }).join("\n");
 
+    let proc = layer.process;
     return [
         `<?xml version="1.0" encoding="UTF-8"?>`,
-        `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="${width}mm" height="${depth}mm" viewBox="0 0 ${width} ${depth}" data-layer="${layer.index}" data-z="${layer.z}">`,
+        `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="${width}mm" height="${depth}mm" viewBox="0 0 ${width} ${depth}" data-layer="${layer.index}" data-z="${layer.z}" data-exposure="${proc.exposure}" data-light-off-delay="${proc.lightOffDelay}" data-light-pwm="${proc.lightPWM}" data-bottom="${proc.bottom}" data-transition="${proc.transition}">`,
         body,
         `</svg>`,
         ``
@@ -182,10 +177,6 @@ function appendPath(parts, poly, device) {
         parts.push(`${index === 0 ? "M" : "L"}${x},${y}`);
     });
     parts.push("Z");
-}
-
-function round(value) {
-    return Number.parseFloat(Number(value || 0).toFixed(5));
 }
 
 export const VSLA = {

@@ -46,6 +46,14 @@ export const SLA_FORMATS = {
         priority: 1,
         family: 'chitubox'
     },
+    ctbe: {
+        id: 'ctbe',
+        ext: 'encrypted.ctb',
+        proprietary: true,
+        available: false,
+        priority: 1,
+        family: 'chitubox-encrypted'
+    },
     goo: {
         id: 'goo',
         ext: 'goo',
