@@ -1,6 +1,7 @@
 /** Copyright Stewart Allen <sa@grid.space> -- All Rights Reserved */
 
 import { imageToRowMajor, renderRasterLayers, round } from './raster.js';
+import { createLayerMetadata, createProcessMetadata, estimatePrintTime, motionFor } from './meta.js';
 
 const FAMILY = "GOO";
 const FILE_VERSION = "V3.0";
@@ -11,13 +12,6 @@ const HEADER_SIZE = 195477;
 const LAYER_DEF_SIZE = 70;
 const FOOTER_SIZE = 11;
 const MAX_RUN = 0x0fffffff;
-const TILT_MOTION = {
-    liftHeight: 0.05,
-    liftSpeed: 0.05,
-    retractHeight: 0,
-    retractSpeed: 0.05,
-    motorTime: 4
-};
 
 const FORMAT_RECORDS = {
     goo: { ext: "goo", machine: "Elegoo GOO", notes: "Elegoo GOO" },
@@ -46,9 +40,9 @@ function encodeGOO(print, progress, photon, rec) {
     let previewLarge = createPreview(290, 290);
 
     let { ctx, volume } = renderRasterLayers(print, photon, params => {
-        let { index, rendered, bottom, z, ctx } = params;
+        let { index, rendered, z, ctx } = params;
         let { device, process, width, height } = ctx;
-        let motion = layerMotion(device, process, bottom);
+        let layerMeta = createLayerMetadata(device, process, index, z, rendered.area);
         let raster = imageToRowMajor(rendered.image, width, height, normalizePixel);
 
         accumulatePreview(previewSmall, rendered.image, width, height);
@@ -57,22 +51,22 @@ function encodeGOO(print, progress, photon, rec) {
         layers.push({
             index,
             data: encodeRLE(raster),
-            z: round(z),
+            z: layerMeta.z,
             pausePositionZ: ctx.device.maxHeight || ctx.device.bedHeight || 0,
-            exposure: bottom ? process.slaBaseOn : process.slaLayerOn,
-            lightOffDelay: 0,
-            waitTimeAfterCure: 0,
-            waitTimeAfterLift: 0,
-            waitTimeBeforeCure: bottom ? process.slaBaseOff : process.slaLayerOff,
-            liftHeight: motion.liftHeight,
-            liftSpeed: motion.liftSpeed,
+            exposure: layerMeta.exposure,
+            lightOffDelay: layerMeta.lightOffDelay,
+            waitTimeAfterCure: layerMeta.waitAfterCure,
+            waitTimeAfterLift: layerMeta.waitAfterLift,
+            waitTimeBeforeCure: layerMeta.waitBeforeCure,
+            liftHeight: layerMeta.liftHeight,
+            liftSpeed: layerMeta.liftSpeed,
             liftHeight2: 0,
             liftSpeed2: 0,
-            retractHeight: motion.retractHeight,
-            retractSpeed: motion.retractSpeed,
+            retractHeight: layerMeta.retractHeight,
+            retractSpeed: layerMeta.retractSpeed,
             retractHeight2: 0,
             retractSpeed2: 0,
-            lightPWM: 255
+            lightPWM: layerMeta.lightPWM
         });
     }, progress ? (value) => progress(value * 0.85, `${rec.ext}_encode`) : null);
 
@@ -107,10 +101,9 @@ function writeGOO(params) {
 function writeHeader(writer, params) {
     let { ctx, layers, volume, previewSmall, previewLarge, rec } = params;
     let { device, process, width, height } = ctx;
-    let bottomOff = process.slaBaseOff || 0;
-    let layerOff = process.slaLayerOff || 0;
-    let bottomMotion = layerMotion(device, process, true);
-    let layerMotionValue = layerMotion(device, process, false);
+    let meta = createProcessMetadata(device, process);
+    let bottomMotion = motionFor(device, process, true);
+    let layerMotionValue = motionFor(device, process, false);
 
     writer.writeString(FILE_VERSION, 4);
     writer.writeBytes(FILE_MAGIC);
@@ -136,17 +129,17 @@ function writeHeader(writer, params) {
     writer.writeF32(device.bedDepth);
     writer.writeF32(device.maxHeight || device.bedHeight || 0);
     writer.writeF32(process.slaSlice);
-    writer.writeF32(process.slaLayerOn);
+    writer.writeF32(meta.exposure);
     writer.writeU8(1);
     writer.writeF32(0);
     writer.writeF32(0);
     writer.writeF32(0);
-    writer.writeF32(bottomOff);
+    writer.writeF32(meta.bottomWaitBeforeCure);
     writer.writeF32(0);
     writer.writeF32(0);
-    writer.writeF32(layerOff);
-    writer.writeF32(process.slaBaseOn);
-    writer.writeU32(process.slaBaseLayers || 0);
+    writer.writeF32(meta.waitBeforeCure);
+    writer.writeF32(meta.bottomExposure);
+    writer.writeU32(meta.bottomLayers);
     writer.writeF32(bottomMotion.liftHeight);
     writer.writeF32(bottomMotion.liftSpeed);
     writer.writeF32(layerMotionValue.liftHeight);
@@ -156,8 +149,8 @@ function writeHeader(writer, params) {
     writer.writeF32(layerMotionValue.retractHeight);
     writer.writeF32(layerMotionValue.retractSpeed);
     for (let i=0; i<8; i++) writer.writeF32(0);
-    writer.writeU16(255);
-    writer.writeU16(255);
+    writer.writeU16(meta.bottomLightPWM);
+    writer.writeU16(meta.lightPWM);
     writer.writeU8(0);
     writer.writeU32(estimatePrintTime(device, process, layers.length));
     writer.writeF32(round(volume));
@@ -195,20 +188,6 @@ function writeLayer(writer, layer) {
     writer.writeU32(layer.dataLength);
     writer.writeBytes(layer.data);
     writer.writeBytes(DELIMITER);
-}
-
-function layerMotion(device, process, bottom) {
-    if (device.slaMotion === "tilt") {
-        return TILT_MOTION;
-    }
-
-    return {
-        liftHeight: bottom ? process.slaBasePeelDist : process.slaPeelDist,
-        liftSpeed: (bottom ? process.slaBasePeelLiftRate : process.slaPeelLiftRate) * 60,
-        retractHeight: bottom ? process.slaBasePeelDist : process.slaPeelDist,
-        retractSpeed: (bottom ? process.slaBasePeelDropRate : process.slaPeelDropRate) * 60,
-        motorTime: 0
-    };
 }
 
 function writeFooter(writer) {
@@ -504,20 +483,6 @@ function accumulatePreview(preview, image, width, height) {
             }
         }
     }
-}
-
-function estimatePrintTime(device, process, layers) {
-    let bottom = Math.min(process.slaBaseLayers || 0, layers);
-    let normal = Math.max(0, layers - bottom);
-    let motorTime = device.slaMotion === "tilt" ? TILT_MOTION.motorTime : 0;
-    let bottomTime = number(process.slaBaseOn) + number(process.slaBaseOff) + motorTime;
-    let normalTime = number(process.slaLayerOn) + number(process.slaLayerOff) + motorTime;
-    return Math.ceil(bottom * bottomTime + normal * normalTime);
-}
-
-function number(value) {
-    value = Number(value);
-    return Number.isFinite(value) ? value : 0;
 }
 
 function checksum(bytes) {

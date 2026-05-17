@@ -210,6 +210,23 @@ Same header structure as CTB v3, with additional support for:
 - PageNumber field in layer table
 - Transition layers
 
+#### 1.4 CTB Encrypted v4-5
+
+**Extensions:** `.ctb`, `.encrypted.ctb`
+**Magic:** `0x12FD0107` (LE)
+**Versions:** 4, 5 (default: 5)
+**Settings block:** 288-byte slicer-settings table encrypted with AES-256-CBC, no padding, zero-padded to 16-byte blocks
+**Layer data:** CTB variable-length 7-bit grayscale RLE, then CTB layer XOR using `LayerXorKey` (`0xEFBEADDE` by default); some files additionally AES-encrypt layer-data subranges
+
+Encrypted CTB is a different container from plain CTB v3/v4/v5, not just a flag on the v3 layout. The fixed 48-byte header points at the encrypted settings block and a final encrypted SHA-256 signature. The AES key/IV are derived from UVtools-compatible Chitubox constants with the `UVtools` XOR mask. Kiri keeps these primitives native in JS in `x_ctb_crypto.js`; full writer support still needs the encrypted settings table, layer pointer table, resin parameters, previews, and final signature wired into `x_ctb`.
+
+Key tables:
+- File header: 48 bytes
+- Slicer settings: 288 bytes
+- Layer pointer: 16 bytes
+- Layer definition: 88 bytes
+- Per-layer settings flag: `0x40` allow, `0x00` disallow
+
 ### 2. Anycubic Family
 
 #### 2.1 Legacy Anycubic Formats (v1)
@@ -654,6 +671,46 @@ PrinterModel = SL1
 }
 ```
 
+### RSLA / VSLA (Grid.Space Generic)
+
+**Extensions:** `.rsla`, `.vsla`
+**Type:** ZIP with JSON manifest
+**Layer Format:** RSLA stores raster PNG layers; VSLA stores SVG-like vector layer geometry
+
+These formats are intended as a vendor-neutral interchange and debugging target. They carry enough process metadata to preserve behavior before conversion to a proprietary printer format.
+
+**Shared manifest process fields:**
+```json
+{
+  "process": {
+    "bottomLayers": 5,
+    "transitionLayers": 8,
+    "exposure": 2.4,
+    "bottomExposure": 28,
+    "lightOffDelay": 0,
+    "bottomLightOffDelay": 0,
+    "waitBeforeCure": 0.5,
+    "bottomWaitBeforeCure": 2,
+    "waitAfterCure": 0,
+    "waitAfterLift": 0,
+    "liftHeight": 5,
+    "bottomLiftHeight": 6,
+    "liftSpeed": 180,
+    "bottomLiftSpeed": 60,
+    "retractHeight": 5,
+    "retractSpeed": 180,
+    "lightPWM": 255,
+    "bottomLightPWM": 255,
+    "motion": "normal",
+    "antiAlias": 1
+  }
+}
+```
+
+Each layer also carries a resolved per-layer `process` object with `bottom`, `transition`, `transitionIndex`, effective exposure, waits, motion, and PWM. Proprietary writers should prefer this resolved per-layer model where their format supports it, then fall back to global process fields where it does not.
+
+VSLA layer SVG roots additionally include process data attributes such as `data-exposure`, `data-light-off-delay`, `data-light-pwm`, `data-bottom`, and `data-transition` so the per-layer intent is visible without parsing the manifest.
+
 ---
 
 ## Implementation Guidance for Sandboxed Environments
@@ -898,6 +955,7 @@ def decode_ctb_variable_rle(data: bytes, width: int, height: int) -> bytes:
 **CTB:**
 - `UVtools.Core/FileFormats/ChituboxFile.cs`: `DecodeCtbImage`, `EncodeCtbImage`, `LayerRleCryptBuffer`
 - `UVtools.Core/FileFormats/CTBEncryptedFile.cs`: encrypted CTB v4-v5 container and AES handling
+- `src/kiri/mode/sla/work/x_ctb_crypto.js`: native JS AES-256-CBC/no-padding, CTB layer XOR, encrypted CTB constants
 
 **Anycubic:**
 - `UVtools.Core/FileFormats/AnycubicFile.cs`: `FileMark`, `Header`, `LayerDef`, `GetAvailableVersionsForExtension`, `PrinterModel`

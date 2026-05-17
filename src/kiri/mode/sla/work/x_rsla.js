@@ -4,6 +4,7 @@ import { JSZip } from '../../../../ext/jszip-esm.js';
 import { PNG } from '../../../../ext/pngjs.esm.js';
 import { photon } from './x_photon.js';
 import { imageToRowMajor, renderRasterLayers, round } from './raster.js';
+import { createLayerMetadata, createProcessMetadata } from './meta.js';
 
 const FORMAT = "rsla";
 const MIME = "application/vnd.gridspace.rsla+zip";
@@ -14,14 +15,17 @@ function encode(print, progress) {
 
     let { ctx, volume } = renderRasterLayers(print, photon, params => {
         let { index, rendered, ctx } = params;
-        let { process, width, height } = ctx;
+        let { device, process, width, height } = ctx;
+        let z = process.slaFirstOffset + process.slaSlice * index;
+        let layerMeta = createLayerMetadata(device, process, index, z, rendered.area);
 
         let file = `layers/${index.toString().padStart(6, "0")}.png`;
         let layer = {
             index,
-            z: round(process.slaFirstOffset + process.slaSlice * index),
-            area: round(rendered.area),
-            file
+            z: layerMeta.z,
+            area: layerMeta.area,
+            file,
+            process: layerMeta
         };
 
         layers.push(layer);
@@ -79,18 +83,7 @@ function createManifest(params) {
             black: "off"
         },
         process: {
-            bottomLayers: process.slaBaseLayers,
-            exposure: process.slaLayerOn,
-            bottomExposure: process.slaBaseOn,
-            lightOffDelay: process.slaLayerOff,
-            bottomLightOffDelay: process.slaBaseOff,
-            liftHeight: process.slaPeelDist,
-            bottomLiftHeight: process.slaBasePeelDist,
-            liftSpeed: process.slaPeelLiftRate * 60,
-            bottomLiftSpeed: process.slaBasePeelLiftRate * 60,
-            retractSpeed: process.slaPeelDropRate * 60,
-            firstLayerOffset: process.slaFirstOffset,
-            antiAlias: process.slaAntiAlias
+            ...createProcessMetadata(device, process)
         },
         layers
     };
