@@ -400,11 +400,12 @@ export const conf = {
                 slaFillDensity: 0,
                 slaFillLine: 0.5,
                 slaFirstOffset: 0,
-                slaSupportLayers: 10,
-                slaSupportDensity: 0.5,
-                slaSupportSize: 0.6,
+                slaSupportLayers: 0,
+                slaSupportDensity: 0.1,
+                slaSupportSize: 0.4,
                 slaSupportPoints: 4,
-                slaSupportGap: 10,
+                slaSupportAngle: 35,
+                slaSupportGap: 0,
                 slaSupportEnable: false
             }
         },
