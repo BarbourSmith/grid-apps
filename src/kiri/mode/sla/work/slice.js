@@ -245,34 +245,65 @@ export function sla_slice(settings, widget, onupdate, ondone) {
     });
 };
 
+const SLA_RENDER_THICK = true;
+
 function doRender(widget) {
     widget.slices.forEach(slice => {
-        const render = slice.output(), lopacity = 0.6, line = 0x010101;
+        const render = slice.output(),
+            height = slice.height || 0.05,
+            lopacity = SLA_RENDER_THICK ? 1 : 0.6,
+            line = 0x010101;
 
         if (slice.unioned) {
             slice.unioned.forEach(poly => {
                 poly = poly.clone(true);//.move(widget.track.pos);
-                render
-                    .setLayer("layers", { line, face: 0x0099cc, lopacity })
-                    .addAreas([poly], { outline: true });
+                renderSlicePoly(render, "layers", poly, {
+                    line,
+                    face: 0x0099cc,
+                    lopacity,
+                    height
+                });
             });
         } else if (slice.tops) {
             slice.tops.forEach(top => {
                 let poly = top.poly;//.clone(true).move(widget.track.pos);
-                render
-                    .setLayer("layers", { line, face: 0xfcba03, lopacity })
-                    .addAreas([poly], { outline: true });
+                renderSlicePoly(render, "layers", poly, {
+                    line,
+                    face: 0xfcba03,
+                    lopacity,
+                    height
+                });
             });
         }
 
         if (slice.supports) {
             slice.supports.forEach(poly => {
-                render
-                    .setLayer("support", { line, face: 0xfcba03, lopacity })
-                    .addAreas([poly], { outline: true });
+                renderSlicePoly(render, "support", poly, {
+                    line,
+                    face: 0xfcba03,
+                    lopacity,
+                    height
+                });
             });
         }
     });
+}
+
+function renderSlicePoly(render, layer, poly, options) {
+    let { line, face, lopacity, height } = options;
+
+    render.setLayer(layer, {
+        line,
+        face,
+        lopacity,
+        opacity: SLA_RENDER_THICK ? 1 : undefined
+    });
+
+    if (SLA_RENDER_THICK) {
+        render.addZVolume([poly], { height, outline: false });
+    } else {
+        render.addAreas([poly], { outline: true });
+    }
 }
 
 function computeSupports(widget, process, progress) {
