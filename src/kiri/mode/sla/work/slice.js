@@ -2,6 +2,7 @@
 
 import { util } from '../../../../geo/base.js';
 import { slicer } from '../../../../geo/slicer.js';
+import { newPoint } from '../../../../geo/point.js';
 import { newPolygon } from '../../../../geo/polygon.js';
 import { polygons as POLY } from '../../../../geo/polygons.js';
 import { newSlice, newTop } from '../../../core/slice.js';
@@ -126,6 +127,11 @@ export function sla_slice(settings, widget, onupdate, ondone) {
             widget.union = union;
             widget.lastraft = lastraft;
         }
+        // keep logical slice indices aligned with array positions. newSlice()
+        // defaults index to 0, and support routing addresses widget.slices[index].
+        slices.forEach((slice, index) => {
+            slice.index = index;
+        });
         // re-connect slices into linked list for island/bridge projections
         for (let i=1; i<slices.length; i++) {
             slices[i-1].up = slices[i];
@@ -156,8 +162,10 @@ export function sla_slice(settings, widget, onupdate, ondone) {
         }, "shells");
         forSlices(slices, 10, (slice) => {
             if (slice.synth) return;
-            layerDiff(slice, 0.000001, {
+            layerDiff(slice, {
                 sla: true,
+                area: 0.000001,
+                thick: 0,
                 fakedown: !process.slaOpenBase
             });
         }, "delta");
@@ -268,312 +276,384 @@ function doRender(widget) {
 }
 
 function computeSupports(widget, process, progress) {
-    let area = widget.union.reduce((t,p) => { return t + p.areaDeep() }, 0),
-        perim = widget.union.reduce((t,p) => { return t + p.perimeter() }, 0),
-        slices = widget.slices,
-        length = slices.length,
-        tot_mass = 0, // total widget "mass"
-        tot_bear = 0; // total "mass-bearing" area
+    let slices = widget.slices,
+        baseIndex = widget.lastraft ? widget.lastraft.index : 0,
+        spacing = supportSpacing(process),
+        points = Math.bound(process.slaSupportPoints || 8, 5, 16),
+        tipRadius = Math.bound(process.slaSupportSize * 0.35, 0.12, 0.45),
+        branchRadius = Math.bound(process.slaSupportSize * 0.55, tipRadius, 0.75),
+        trunkRadius = Math.bound(process.slaSupportSize * 0.85, branchRadius, 1.25),
+        segmentLayers = Math.max(4, Math.round(2 / process.slaSlice)),
+        contacts = collectSupportContacts(slices, process, spacing, tipRadius),
+        levels = new Map();
 
-    let ops = slices.filter(slice => !slice.synth);
+    slices.forEach(slice => {
+        delete slice.supports;
+        delete slice.pillars;
+    });
 
-    // compute total "mass" by slice
-    ops.forEach(slice => {
-        slice.mass = slice.unioned.reduce((t,p) => { return t + p.areaDeep() }, 0);
-        if (slice.up && slice.up.bridges) {
-            slice.bear = slice.up.bridges.reduce((t,p) => { return t + p.areaDeep() }, 0);
-            slice.bear_up = slice.up.bridges;
-            tot_bear += slice.bear;
+    contacts.sort((a, b) => {
+        if (b.slice.index !== a.slice.index) return b.slice.index - a.slice.index;
+        return b.area - a.area;
+    });
+
+    if (contacts.length === 0) {
+        progress(1);
+        return;
+    }
+
+    contacts.forEach(contact => {
+        routeSupportTree({
+            slices,
+            baseIndex,
+            levels,
+            contact,
+            process,
+            points,
+            tipRadius,
+            branchRadius,
+            trunkRadius,
+            segmentLayers,
+            spacing
+        });
+        progress(1 / contacts.length);
+    });
+}
+
+function collectSupportContacts(slices, process, spacing, tipRadius) {
+    let contacts = [],
+        minArea = Math.max(0.01, tipRadius * tipRadius),
+        minDist = Math.max(tipRadius * 2.25, spacing * 0.35);
+
+    slices.forEach(slice => {
+        if (slice.synth || !slice.bridges?.length) return;
+
+        let points = [],
+            bridges = unsupportedBridgePolys(slice, process, minArea);
+
+        bridges.forEach(poly => {
+            if (poly.areaDeep() < minArea) return;
+            sampleBridgePolygon(poly, slice.z, spacing, points);
+        });
+
+        points = dedupePoints(points, minDist);
+        points.forEach(point => {
+            contacts.push({
+                slice,
+                point,
+                area: point.supportArea || 0
+            });
+        });
+    });
+
+    return contacts;
+}
+
+function unsupportedBridgePolys(slice, process, minArea) {
+    if (!slice.down?.tops?.length) return slice.bridges;
+
+    let selfSupport = supportSelfDistance(process),
+        lower = POLY.expand(slice.down.topPolys().clone(true), selfSupport, slice.z, [], 1, undefined, undefined, minArea);
+
+    if (!lower.length) return slice.bridges;
+
+    let unsupported = [];
+    POLY.subtract(slice.bridges, lower, unsupported, null, slice.z, minArea, { wasm: true });
+    return unsupported;
+}
+
+function supportSelfDistance(process) {
+    return Math.max(
+        process.slaSlice * 1.25,
+        process.slaSupportSize * 0.08
+    );
+}
+
+function sampleBridgePolygon(poly, z, spacing, points) {
+    let flats = poly.clone(true).flattenTo([]),
+        emitted = 0;
+
+    flats.forEach(flat => {
+        let area = flat.areaDeep(),
+            center = flat.center();
+
+        if (center && center.isInPolygon(flat)) {
+            center.z = z;
+            center.supportArea = area;
+            points.push(center);
+            emitted++;
+        }
+
+        flat.forEachSegment((p1, p2) => {
+            let dist = p1.distTo2D(p2);
+            if (dist <= 0) return;
+
+            let count = Math.max(1, Math.ceil(dist / spacing));
+            for (let i=0; i<count; i++) {
+                let point = p1.offsetPointTo(p2, (dist * (i + 0.5)) / count);
+                point.z = z;
+                point.supportArea = area;
+                points.push(point);
+                emitted++;
+            }
+        });
+    });
+
+    if (!emitted && poly.length) {
+        let center = poly.center();
+        center.z = z;
+        center.supportArea = poly.areaDeep();
+        points.push(center);
+    }
+}
+
+function routeSupportTree(args) {
+    let {
+        slices, baseIndex, levels, contact, process, points,
+        tipRadius, branchRadius, trunkRadius, segmentLayers, spacing
+    } = args;
+    let current = {
+        sliceIndex: contact.slice.index,
+        point: contact.point,
+        radius: tipRadius
+    };
+
+    while (current.sliceIndex > baseIndex) {
+        let nextIndex = nextSupportLevel(current.sliceIndex, baseIndex, segmentLayers),
+            depth = (contact.slice.index - nextIndex) / Math.max(contact.slice.index - baseIndex, 1),
+            vertical = (current.sliceIndex - nextIndex) * process.slaSlice,
+            maxMove = maxTreeMove(vertical),
+            radius = lerp(branchRadius, trunkRadius, depth),
+            target = {
+                sliceIndex: nextIndex,
+                point: treeTargetPoint(current.point, contact.point, depth, spacing, maxMove),
+                radius
+            },
+            fit = fitSegmentTarget(slices, current, target, radius, contact.slice.index, maxMove),
+            mergeSearch = mergeSearchRadius(spacing, radius, depth, maxMove),
+            merge = findMergeNode(levels, nextIndex, fit.point, mergeSearch);
+
+        target.point = fit.point;
+
+        if (merge && current.point.distTo2D(merge.point) <= maxMove) {
+            let mergeCollisions = segmentCollisions(slices, current, merge,
+                Math.max(radius, merge.radius), contact.slice.index);
+
+            if (mergeCollisions === 0) {
+                target = merge;
+                target.merged = true;
+                target.radius = Math.max(target.radius, radius);
+            } else {
+                addLevelNode(levels, target);
+            }
         } else {
-            slice.bear = 0;
-        }
-        tot_mass += slice.mass;
-    });
-
-    let mass_per_bear = (tot_mass / tot_bear) * (1 / process.slaSupportDensity);
-
-    // console.log({tot_mass, tot_bear, ratio: tot_mass / tot_bear, mass_per_bear});
-
-    let first;
-    ops.slice().map((s,i) => {
-        if (!first && s.bear) {
-            s.ord_first = first = true;
-        }
-        // 30x lowest to 1x highest
-        s.ord_weight = Math.pow(30,((ops.length - i) / ops.length));
-        return s;
-    }).sort((a,b) => {
-        if (a.ord_first) return -1;
-        if (b.ord_first) return 1;
-        return (b.bear * b.ord_weight) - (a.bear * a.ord_weight);
-    }).forEach((slice, index) => {
-        slice.ord_bear = index;
-    })
-
-    let rem_mass = tot_mass,
-        rem_bear = tot_bear;
-
-    // compute remaining mass, bearing surface, for each slice
-    let run, runLast, runCount = 0, runList = [];
-    ops.forEach(slice => {
-        slice.rem_mass = rem_mass;
-        slice.rem_bear = rem_bear;
-        // slice.can_bear = slice.mass * mass_per_bear;
-        slice.can_bear = slice.bear * mass_per_bear;
-        rem_mass -= slice.mass;
-        rem_bear -= slice.bear;
-    });
-
-    let ord = ops.sort((a,b) => {
-        return a.ord_bear - b.ord_bear;
-    });
-
-    rem_mass = tot_mass;
-    rem_bear = tot_bear;
-
-    // in order of load bearing capability, select layer
-    // and recompute the requirements on the slices below
-    for (let i=0; i<ord.length; i++) {
-        let slice = ord[i],
-            bearing = Math.min(slice.can_bear, slice.rem_mass);
-
-        // remove from slices below the amount of mass they have to bear
-        for (let j=slice.index - 1; j>ops[0].index; j--) {
-            slices[j].rem_mass -= bearing;
+            addLevelNode(levels, target);
         }
 
-        // remove total mass left to bear
-        rem_mass -= bearing;
-        slice.can_emit = true;
-        if (rem_mass <= 0) {
-            // console.log({break: i, of: ord.length});
+        emitSupportSegment({
+            slices,
+            points,
+            from: current,
+            to: target
+        });
+
+        if (target.merged) {
             break;
         }
-    }
 
-    let seq = 0,
-        seqLast = 0,
-        spacing = (1 - process.slaSupportDensity) * 10,
-        size = Math.bound(process.slaSupportSize / 2, 0.25, 1);
-
-    // compute and project support pillars
-    slices.forEach((slice,index) => {
-        if (slice.can_emit) {
-            if (seq === 0 || slice.index - seqLast > 5) {
-                slice.bear_up.map(p => {
-                    return p.clone(true).setZ(slice.z);
-                }).forEach(p => {
-                    projectSupport(process, slice, p, size, spacing);
-                });
-                seq++;
-            } else if (seq > 5) {
-                seq = 0;
-            } else {
-                seq++;
-            }
-            seqLast = slice.index;
-        }
-        progress(1 / slices.length);
-    });
-
-    // union support pillars
-    slices.forEach(slice => {
-        if (slice.supports) {
-            slice.supports = POLY.union(slice.supports, 0, true);
-        }
-    });
-}
-
-function projectSupport(process, slice, poly, size, spacing) {
-    let flat = poly.circularityDeep() > 0.1,
-        arr = [ poly ];
-
-    // insetting polys produces arrays. consume til gone
-    while (arr.length) {
-        poly = arr.shift();
-        let out = [],
-            seg = [],
-            per = poly.perimeter(),
-            crit = 0,
-            polys = poly.clone(true).flattenTo([]);
-
-        polys.forEach(p => p.forEachSegment((p1, p2) => {
-            let rec = {dist: p1.distTo2D(p2), p1, p2};
-            if (rec.dist >= spacing || slice.ord_first) crit++;
-            seg.push(rec);
-        }));
-
-        seg.sort((a,b) => {
-            return b.dist - a.dist;
-        });
-
-        // emit all critical (long) segments. min 3
-        while (seg.length && (crit > 0 || out.length < 3)) {
-            let {dist, p1, p2} = seg.shift();
-            if (dist >= spacing) {
-                // spaced along line
-                let num = Math.ceil(dist / spacing) + 1,
-                    step = dist / num,
-                    pt = p1;
-                while (num-- >= 0) {
-                    out.push(pt);
-                    pt = pt.offsetPointTo(p2, step);
-                }
-                crit--;
-            } else {
-                // line midpoint
-                out.push(p1.offsetPointTo(p2, dist / 2));
-            }
-        }
-
-        // drop points too close to other pillars
-        if (!slice.ord_first)
-        drop: for (let i=0; i<out.length; i++) {
-            for (let j=i+1; j<out.length; j++) {
-                if (out[i].distTo2D(out[j]) <= size) {
-                    out[i] = null;
-                    continue drop;
-                }
-            }
-            if (slice.pillars) slice.pillars.forEach(rec => {
-                if (out[i] && out[i].distTo2D(rec.point) <= size) {
-                    out[i] = null;
-                }
-            });
-        }
-
-        // mark support pillar for each point
-        out.filter(p => p !== null)
-            .forEach(p => {
-                let track = projectPillar(process, slice, p, size, []);
-                // find stunted pillars terminating on a face (not raft or merged)
-                if (track.length && !(track.max || track.synth || track.merged)) {
-                    // remove stunted pillar
-                    track.forEach(rec => {
-                        let sp = rec.slice.supports;
-                        let rp = sp.indexOf(rec.pillar);
-                        if (rp >= 0) sp.splice(rp,1);
-                    });
-                }
-            });
-
-        // inset polygon for flat area support
-        if (flat) poly.offset(Math.max(0.2, 1 - process.slaSupportDensity), arr);
+        current = target;
     }
 }
 
-function projectPillar(process, slice, point, size, track) {
+function emitSupportSegment(args) {
+    let { slices, points, from, to } = args,
+        span = Math.max(1, from.sliceIndex - to.sliceIndex);
+
+    for (let index=from.sliceIndex; index>=to.sliceIndex; index--) {
+        let t = (from.sliceIndex - index) / span,
+            slice = slices[index],
+            radius = lerp(from.radius, to.radius, t),
+            point = interpolatePoint(from.point, to.point, t, slice.z);
+
+        addSupportCircle(slice, point, radius, points);
+    }
+}
+
+function addSupportCircle(slice, point, radius, points) {
+    let support = newPolygon()
+        .centerCircle(point, radius, points, true)
+        .setZ(slice.z);
     if (!slice.supports) slice.supports = [];
-    if (!slice.pillars) slice.pillars = [];
+    slice.supports.push(support);
+}
 
-    let points = process.slaSupportPoints,
-        pillar = newPolygon()
-            .centerCircle(point, size/2, points, true)
-            .setZ(slice.z),
-        max = process.slaSupportSize,
-        inc = process.slaSlice/2,
-        end = false, // center intersects
-        over = [], // overlapping points
-        safe = [], // non-overlapping points
-        low = slice.index < process.slaSupportGap + process.slaSupportLayers;
+function findMergeNode(levels, sliceIndex, point, radius) {
+    let nodes = levels.get(sliceIndex);
+    if (!nodes) return;
 
-    track.min = track.min ? Math.min(track.min, size) : size;
-    track.max = (track.max ? true : false) || size >= max;
-    track.synth = track.synth || slice.synth;
-
-    slice.tops.forEach(t => {
-        if (track.length > 3 && point.isInPolygon(t.poly)) {
-            end = true;
+    let best, bestDist = Infinity;
+    for (let node of nodes) {
+        let dist = point.distTo2D(node.point);
+        if (dist < bestDist && dist <= radius) {
+            best = node;
+            bestDist = dist;
         }
-        pillar.points.forEach(p => {
-            let isin = p.isInPolygon(t.poly);// || p.nearPolygon(t.poly, 0.001);
-            if (isin) {
-                over.push(p);
-            } else {
-                safe.push(p);
-            }
-        });
+    }
+    return best;
+}
+
+function addLevelNode(levels, node) {
+    let nodes = levels.get(node.sliceIndex);
+    if (!nodes) levels.set(node.sliceIndex, nodes = []);
+    nodes.push(node);
+}
+
+function nextSupportLevel(currentIndex, baseIndex, segmentLayers) {
+    let aboveBase = currentIndex - baseIndex;
+    if (aboveBase <= segmentLayers) return baseIndex;
+    return baseIndex + Math.floor((aboveBase - 1) / segmentLayers) * segmentLayers;
+}
+
+function supportCollides(slice, point, radius) {
+    if (slice.synth || !slice.tops?.length) return false;
+    let radius2 = radius * radius;
+    return slice.tops.some(top => {
+        let poly = top.poly;
+        return point.isInPolygon(poly) || point.nearPolygon(poly, radius2, true);
     });
+}
 
-    if (end) {
-        // backtrack shrinking pillars to point if
-        // not landing on the base and size is max'd
-        if (!slice.synth && track.max) {
-            let nusize = track.min;
-            while (track.length) {
-                let prec = track.pop(),
-                    npil = newPolygon()
-                            .centerCircle(prec.point, nusize/2, points, true)
-                            .setZ(prec.slice.z),
-                    spos = prec.slice.supports.indexOf(prec.pillar);
-                // if we find our old pillar, replace
-                if (spos >= 0) {
-                    prec.slice.supports[spos] = npil;
-                    nusize += inc;
-                }
-                if (nusize > prec.size) {
-                    break;
-                }
-            }
+function fitSegmentTarget(slices, from, to, radius, contactIndex, maxMove) {
+    let candidates = segmentTargetCandidates(from.point, to.point, maxMove),
+        best = to.point,
+        bestCollisions = Infinity,
+        bestScore = Infinity;
+
+    for (let candidate of candidates) {
+        let fit = {
+            sliceIndex: to.sliceIndex,
+            point: candidate,
+            radius: to.radius
+        };
+        let collisions = segmentCollisions(slices, from, fit, radius, contactIndex);
+        let score = collisions * 10000 + to.point.distTo2D(candidate) * 10 + from.point.distTo2D(candidate);
+        if (collisions < bestCollisions || (collisions === bestCollisions && score < bestScore)) {
+            best = candidate;
+            bestCollisions = collisions;
+            bestScore = score;
+            if (collisions === 0) break;
         }
-        return track;
     }
 
-    let nextpoint = point;
+    return {
+        point: best,
+        collisions: bestCollisions
+    };
+}
 
-    if (over.length) {
-        // move toward average of safe (non-overlapping) points
-        if (safe.length) {
-            let x = 0, y = 0;
-            safe.forEach(p => { x += p.x; y += p.y });
-            x /= safe.length;
-            y /= safe.length;
-            nextpoint = point.offsetPointTo({x, y, z:slice.z}, inc);
+function segmentTargetCandidates(from, point, maxMove) {
+    let out = [
+            point,
+            newPoint(from.x, from.y, point.z)
+        ],
+        dirs = [
+            [1, 0], [-1, 0], [0, 1], [0, -1],
+            [0.707, 0.707], [-0.707, 0.707],
+            [0.707, -0.707], [-0.707, -0.707]
+        ];
+
+    for (let scale of [0.5, 1]) {
+        let dist = maxMove * scale;
+        for (let dir of dirs) {
+            out.push(newPoint(
+                point.x + dir[0] * dist,
+                point.y + dir[1] * dist,
+                point.z
+            ));
         }
-        // once max'ed out, can only shrink in size
-        if (track.max) {
-            size -= inc;
+    }
+
+    return out;
+}
+
+function mergeSearchRadius(spacing, radius, depth, maxMove) {
+    return Math.max(
+        radius * 2,
+        Math.min(spacing * (0.35 + depth * 0.65), maxMove)
+    );
+}
+
+function segmentCollisions(slices, from, to, radius, contactIndex) {
+    let span = Math.max(1, from.sliceIndex - to.sliceIndex),
+        collisions = 0;
+
+    for (let index=from.sliceIndex; index>=to.sliceIndex; index--) {
+        if (index >= contactIndex - 2) continue;
+        let slice = slices[index],
+            t = (from.sliceIndex - index) / span,
+            point = interpolatePoint(from.point, to.point, t, slice.z);
+        if (supportCollides(slice, point, radius)) {
+            collisions++;
         }
-    } else if (!track.max || low) {
-        size += inc;
-        if (low) max += (process.slaSupportGap * process.slaSlice * 2);
     }
 
-    if (size < track.min) {
-        return track;
-    }
+    return collisions;
+}
 
-    // let close = [];
-    // for (let i=0; i<slice.pillars.length; i++) {
-    //     let p = slice.pillars[i].point;
-    //     let d = point.distTo2D(p);
-    //     // terminate if we're inside another pillar
-    //     if (d < inc) {
-    //         track.merged = true;
-    //         return track;
-    //     }
-    //     if (d <= process.slaSupportSize * 1.5) {
-    //         close.push(p);
-    //     }
-    // }
-    // if (close.length) {
-    //     let newp = point.clone();
-    //     close.forEach(p => {
-    //         newp.x += p.x;
-    //         newp.y += p.y;
-    //     });
-    //     newp.x /= (close.length + 1);
-    //     newp.y /= (close.length + 1);
-    //     nextpoint = point.offsetPointTo(newp, inc);
-    // }
+function supportSpacing(process) {
+    return Math.max(
+        process.slaSupportSize * 2.5,
+        2 + (1 - process.slaSupportDensity) * 8
+    );
+}
 
-    slice.supports.push(pillar);
-    slice.pillars.push({point, pillar, size});
-    track.push({slice, point, pillar, size});
-    if (slice.down) {
-        projectPillar(process, slice.down, nextpoint, Math.min(size, max), track);
-    }
-    return track;
+function maxTreeMove(vertical) {
+    // Keep branches printable by capping horizontal drift to about 18 degrees.
+    return Math.max(0.05, vertical * 0.3249);
+}
+
+function dedupePoints(points, minDist) {
+    let out = [];
+    points.sort((a, b) => (b.supportArea || 0) - (a.supportArea || 0));
+    points.forEach(point => {
+        if (!out.some(existing => existing.distTo2D(point) < minDist)) {
+            out.push(point);
+        }
+    });
+    return out;
+}
+
+function treeTargetPoint(point, _origin, depth, spacing, maxMove) {
+    let grid = spacing * (2 + depth * 3),
+        target = {
+            x: Math.round(point.x / grid) * grid,
+            y: Math.round(point.y / grid) * grid
+        },
+        blend = Math.min(0.5, 0.12 + depth * 0.35);
+
+    return limitTreeMove(point, newPoint(
+        lerp(point.x, target.x, blend),
+        lerp(point.y, target.y, blend),
+        point.z
+    ), maxMove);
+}
+
+function limitTreeMove(from, to, maxMove) {
+    let dist = from.distTo2D(to);
+    if (dist <= maxMove) return to;
+    return from.offsetPointTo(to, maxMove);
+}
+
+function interpolatePoint(from, to, t, z) {
+    return newPoint(
+        lerp(from.x, to.x, t),
+        lerp(from.y, to.y, t),
+        z
+    );
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
 }
 
 function fillPolys(slice, settings) {
