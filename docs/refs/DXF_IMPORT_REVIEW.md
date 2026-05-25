@@ -1,6 +1,7 @@
 # DXF Import Implementation Review
 
 ## Overview
+
 Added DXF import functionality to complement the existing DXF export feature, following the same architecture as SVG import.
 
 ## Implementation Summary
@@ -28,6 +29,7 @@ Added DXF import functionality to complement the existing DXF export feature, fo
 ### Export Format (from `src/kiri/mode/laser/init-work.js`)
 
 The existing `exportDXF()` function generates:
+
 ```dxf
   0
 SECTION
@@ -58,12 +60,14 @@ ENDSEC
 ### Import Implementation Compatibility
 
 ✅ **Fully Compatible** with exported format:
+
 - Parses POLYLINE entities with VERTEX sub-entities
 - Reads group code 70 (closed flag)
 - Reads group codes 10, 20, 30 (X, Y, Z coordinates)
 - Handles SEQEND terminator
 
 ✅ **Additional Entity Support**:
+
 - LWPOLYLINE (modern compact format)
 - LINE (simple two-point segments)
 - CIRCLE (converted to polygon)
@@ -74,23 +78,27 @@ ENDSEC
 ### Entity Parsing
 
 #### POLYLINE (Traditional Format)
+
 - Uses VERTEX sub-entities for each point
 - Flag 70 bit 0: closed (1) or open (0)
 - Group codes: 10=X, 20=Y, 30=Z
 - Terminated by SEQEND
 
 #### LWPOLYLINE (Lightweight Format)
+
 - Direct vertex coordinates (no VERTEX entities)
 - More compact than POLYLINE
 - Flag 70 bit 0: closed/open
 - **Limitation**: Bulge values (arcs) not yet supported
 
 #### LINE
+
 - Simple two-point entity
 - Group codes: 10,20,30 = start, 11,21,31 = end
 - Always treated as open polyline
 
 #### CIRCLE
+
 - Center point (10,20,30) + radius (40)
 - Converted to polygon based on segment size
 - **Default**: 1mm segments (e.g., 10mm radius circle = ~63 segments)
@@ -98,6 +106,7 @@ ENDSEC
 - Calculation: `segments = max(minSegments, ceil(2πr / segmentSize))`
 
 #### ARC
+
 - Center (10,20,30) + radius (40)
 - Start angle (50) and end angle (51) in degrees
 - Converted to polyline based on segment size
@@ -138,7 +147,7 @@ Load into scene
 ✅ **Line Ending Handling**: Normalizes \r\n, \r, \n
 ✅ **Whitespace**: Trims all lines (handles varying spacing in group codes)
 ✅ **Bounds Checking**: Prevents index out of bounds errors
-✅ **Empty Entity Skip**: Ignores entities with < 2 points
+✅ **Empty Entity Skip**: Ignores entities with fewer than 2 points
 ✅ **Default Values**: Safe defaults for missing Z coordinates
 ✅ **Error Handling**: Try/catch in parseAsync wrapper
 
@@ -231,6 +240,7 @@ The DXF import dialog provides the following options:
 ## Comparison with SVG Import
 
 ### Similarities
+
 - Both use polygon-based pipeline
 - Both support nesting for holes
 - Both extrude 2D to 3D
@@ -238,18 +248,19 @@ The DXF import dialog provides the following options:
 
 ### Differences
 
-| Feature | SVG Import | DXF Import |
-|---------|-----------|------------|
-| Parser | THREE.SVGLoader | Custom implementation |
-| Dependency | three.js library | None (pure JS) |
-| Arc Resolution | User-configurable | Fixed algorithm |
-| DPI Setting | Yes | No (DXF is unitless) |
-| Curve Types | Bezier, arcs, ellipses | Lines, arcs, circles |
-| Y-Axis | Inverted (SVG quirk) | Standard (CAD) |
+| Feature        | SVG Import             | DXF Import            |
+| -------------- | ---------------------- | --------------------- |
+| Parser         | THREE.SVGLoader        | Custom implementation |
+| Dependency     | three.js library       | None (pure JS)        |
+| Arc Resolution | User-configurable      | Fixed algorithm       |
+| DPI Setting    | Yes                    | No (DXF is unitless)  |
+| Curve Types    | Bezier, arcs, ellipses | Lines, arcs, circles  |
+| Y-Axis         | Inverted (SVG quirk)   | Standard (CAD)        |
 
 ## Code Quality
 
 ### Strengths
+
 ✅ Follows existing architecture patterns
 ✅ No external dependencies
 ✅ Clear, readable code with comments
@@ -257,6 +268,7 @@ The DXF import dialog provides the following options:
 ✅ Consistent with SVG import style
 
 ### Areas for Improvement
+
 ⚠️ No comprehensive unit tests yet
 ⚠️ Could add SPLINE support for advanced CAD
 ⚠️ Could expose layer information to UI
@@ -265,12 +277,14 @@ The DXF import dialog provides the following options:
 ## Security Considerations
 
 ✅ **Safe Parsing**:
+
 - No `eval()` or code execution
 - No file system access
 - Bounds checking prevents array overflow
 - String operations only (no binary exploits)
 
 ✅ **Input Validation**:
+
 - parseFloat() for numeric values (NaN-safe)
 - Trim whitespace (prevents injection)
 - Length checks before array access
@@ -278,11 +292,13 @@ The DXF import dialog provides the following options:
 ## Performance
 
 **Expected Performance**:
-- Small files (<100 entities): <10ms
-- Medium files (100-1000 entities): <100ms
-- Large files (1000-10000 entities): <1s
+
+- Small files (fewer than 100 entities): under 10ms
+- Medium files (100-1000 entities): under 100ms
+- Large files (1000-10000 entities): under 1s
 
 **Optimization Opportunities**:
+
 - Could use worker thread for large files
 - Could stream parse (currently loads entire file)
 - Could skip unknown entities faster (regex match)
