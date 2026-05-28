@@ -278,7 +278,7 @@ function writeHeader(writer, params) {
     writer.writeF32(0);
     writer.writeF32(0);
     writer.writeString("$", 4);
-    writer.writeU32(0);
+    writer.writeU32(1);
     writer.writeU32(printTime);
     writer.writeU32(0);
     writer.writeU32(0);
@@ -538,7 +538,12 @@ function readHeader(view, offset) {
         volume: view.getFloat32(at + 36, true),
         antiAlias: view.getUint32(at + 40, true),
         resolutionX: view.getUint32(at + 44, true),
-        resolutionY: view.getUint32(at + 48, true)
+        resolutionY: view.getUint32(at + 48, true),
+        weight: view.getFloat32(at + 52, true),
+        price: view.getFloat32(at + 56, true),
+        currency: readString(view, at + 60, 4),
+        perLayerSettings: view.getUint32(at + 64, true),
+        printTime: view.getUint32(at + 68, true)
     };
 }
 
