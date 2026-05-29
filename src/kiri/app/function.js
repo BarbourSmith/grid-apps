@@ -489,7 +489,28 @@ function preparePreview(callback, scale = 1, offset = 0) {
  * Checks for browser support and emits function.animate event.
  */
 function prepareAnimation() {
-    if (!window.SharedArrayBuffer) {
+    const force = api.const.SETUP.cam_anim_xfer?.[0];
+    const forced = force === "1" || force === "true" || api.local.getBoolean("cam.anim.xfer.test");
+
+    if (forced || !window.SharedArrayBuffer) {
+        const settings = api.conf.get();
+        const disabled = force === "0" || force === "false" || force === "off";
+        let framed = false;
+
+        try {
+            framed = window.self !== window.top;
+        } catch (e) {
+            framed = true;
+        }
+
+        if (!disabled && settings.mode === "CAM" && (framed || forced)) {
+            api.event.emit("function.animate", {
+                mode: settings.mode,
+                transfer: true
+            });
+            return;
+        }
+
         api.alerts.show("The security context of this");
         api.alerts.show("window prevents animations.");
         api.alerts.show("Try a Chromium-based browser");

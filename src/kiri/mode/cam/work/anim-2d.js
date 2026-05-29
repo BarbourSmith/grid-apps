@@ -123,6 +123,14 @@ function createGrid(stepsX, stepsY, size, step, stock) {
     return { pos, ind, sab };
 }
 
+function getToolID(tool) {
+    return tool?.getID ? tool.getID() : tool;
+}
+
+function hasToolID(toolID) {
+    return toolID !== undefined && toolID !== null;
+}
+
 let animateClear = false;
 let animating = false;
 let renderDist = 0;
@@ -175,8 +183,9 @@ function renderPath(send) {
     }
     pathIndex++;
 
-    const firstTool = !tool && next.tool;
-    const toolChange = !firstTool && (tool.getID() !== next.tool.getID());
+    const nextToolID = getToolID(next.tool);
+    const firstTool = !tool && hasToolID(nextToolID);
+    const toolChange = !firstTool && (tool.getID() !== nextToolID);
     if (firstTool || toolChange) {
         // on real tool change, go to safe Z first
         if (tool && last.point) {
@@ -187,7 +196,7 @@ function renderPath(send) {
             };
             send.data({ mesh_move: { toolID, pos }});
         }
-        updateTool(next.tool, send);
+        updateTool(nextToolID, send);
     }
 
     const id = toolID;
@@ -285,11 +294,11 @@ function deformMesh(pos, send) {
     }
 }
 
-function updateTool(toolobj, send) {
+function updateTool(toolid, send) {
     if (tool) {
         send.data({ mesh_del: toolID });
     }
-    tool = new Tool(settings, toolobj.getID());
+    tool = new Tool(settings, toolid);
     tool.generateProfile(rez);
     const flen = tool.fluteLength() || 15;
     const slen = tool.shaftLength() || 15;

@@ -93,6 +93,14 @@ export function init(worker) {
     };
 }
 
+function getToolID(tool) {
+    return tool?.getID ? tool.getID() : tool;
+}
+
+function hasToolID(toolID) {
+    return toolID !== undefined && toolID !== null;
+}
+
 function renderPath(send) {
     if (renderDone) {
         return;
@@ -127,7 +135,9 @@ function renderPath(send) {
     }
     pathIndex++;
 
-    if (next.tool && (!tool || tool.getID() !== next.tool.getID())) {
+    const nextToolID = getToolID(next.tool);
+
+    if (hasToolID(nextToolID) && (!tool || tool.getID() !== nextToolID)) {
         // on real tool change, go to safe Z first
         if (tool && last.point) {
             let pos = last.point = {
@@ -138,7 +148,7 @@ function renderPath(send) {
             toolMove(pos);
             send.data(toolUpdateMsg);
         }
-        toolUpdate(next.tool.getID(), send);
+        toolUpdate(nextToolID, send);
     }
 
     const id = toolID;

@@ -26,6 +26,7 @@ const { BufferGeometryUtils } = THREE;
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const hasSharedArrays = self.SharedArrayBuffer ? true : false;
+const CAM_ANIM_API = "/api/cam_anim";
 
 const { VIEWS, STACKS } = api.const;
 const { noop } = api;
@@ -641,8 +642,12 @@ export function init() {
         if (env.isAnimate || !env.isCamMode) {
             return;
         }
+        const transferWindow = mode?.transfer ? openAnimationWindow() : undefined;
         api.function.prepare(() => {
             if (env.isCamMode) {
+                if (mode?.transfer) {
+                    return transferAnimation(transferWindow);
+                }
                 animate();
             }
         });
@@ -803,6 +808,8 @@ export function init() {
             if (parse) parse.button("animate", animate);
         }
     });
+
+    api.event.on("init-done", receiveAnimationTransfer);
 
     $('op-add').onmouseenter = () => {
         if (env.func.unpop) env.func.unpop();
@@ -1050,4 +1057,111 @@ function animate() {
     STACKS.clear();
     animFn().animate(api);
     api.view.set_animate();
+}
+
+function openAnimationWindow() {
+    let path = location.pathname;
+    let kio = path.indexOf("/kiri/");
+    let target = new URL(kio >= 0 ? path.substring(0, kio + 6) : "/kiri/", location.origin);
+
+    target.search = "mode:CAM";
+    return window.open(target.toString(), "_blank");
+}
+
+function transferAnimation(win) {
+    api.show.busy("publishing animation");
+    api.client.send("cam_anim_export", {}, reply => {
+        if (reply?.error) {
+            api.show.busy(false);
+            api.show.alert(reply.error, 5);
+            return;
+        }
+
+        const payload = {
+            mode: "CAM",
+            settings: api.conf.get(),
+            animVer: env.animVer,
+            output: reply.output
+        };
+
+        fetch(CAM_ANIM_API, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        }).then(res => {
+            if (!res.ok) {
+                throw new Error(`transfer failed: ${res.status}`);
+            }
+            return res.json();
+        }).then(({ key, error }) => {
+            if (error) {
+                throw new Error(error);
+            }
+            let path = location.pathname;
+            let kio = path.indexOf("/kiri/");
+            let target = new URL(kio >= 0 ? path.substring(0, kio + 6) : "/kiri/", location.origin);
+            target.search = `mode:CAM,cam_anim:${encodeURIComponent(key)}`;
+            if (win && !win.closed) {
+                win.location = target.toString();
+            } else {
+                window.open(target.toString(), "_blank");
+            }
+            api.show.busy(false);
+        }).catch(error => {
+            api.show.busy(false);
+            api.show.alert(error.message || String(error), 5);
+        });
+    });
+}
+
+function receiveAnimationTransfer() {
+    const key = api.const.SETUP.cam_anim?.[0];
+
+    if (!key) {
+        return;
+    }
+
+    api.show.busy("loading animation");
+    fetch(`${CAM_ANIM_API}?key=${encodeURIComponent(key)}`)
+        .then(res => {
+            if (!res.ok) {
+                throw new Error(`transfer missing: ${res.status}`);
+            }
+            return res.json();
+        })
+        .then(payload => {
+            if (payload.error) {
+                throw new Error(payload.error);
+            }
+            if (payload.mode !== "CAM") {
+                throw new Error("invalid animation mode");
+            }
+            applyTransferSettings(payload.settings);
+            env.animVer = payload.animVer ?? env.animVer;
+            api.client.send("cam_anim_import", payload, reply => {
+                api.show.busy(false);
+                if (reply?.error) {
+                    api.show.alert(reply.error, 5);
+                    return;
+                }
+                animate();
+            });
+        })
+        .catch(error => {
+            api.show.busy(false);
+            api.show.alert(error.message || String(error), 5);
+        });
+}
+
+function applyTransferSettings(next) {
+    const settings = api.conf.get();
+
+    for (let key of Object.keys(settings)) {
+        delete settings[key];
+    }
+
+    Object.assign(settings, next, { mode: "CAM" });
+    api.conf.update_fields();
 }

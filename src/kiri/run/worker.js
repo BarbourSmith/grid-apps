@@ -65,6 +65,94 @@ function setPrint(print) {
     return current.print = print;
 }
 
+function exportAnimationOutput(output) {
+    return output.map(layer => Array.isArray(layer) ? layer.map(exportAnimationRecord) : layer);
+}
+
+function importAnimationOutput(output) {
+    return output.map(layer => Array.isArray(layer) ? layer.map(importAnimationRecord) : layer);
+}
+
+function exportAnimationRecord(rec) {
+    if (!rec) {
+        return rec;
+    }
+
+    return {
+        point: exportAnimationPoint(rec.point),
+        emit: rec.emit,
+        speed: rec.speed,
+        tool: exportAnimationTool(rec.tool),
+        type: rec.type,
+        center: exportAnimationPoint(rec.center),
+        clockwise: rec.clockwise,
+        distance: rec.distance,
+        retract: rec.retract,
+        arcPoints: rec.arcPoints?.map(exportAnimationPoint)
+    };
+}
+
+function importAnimationRecord(rec) {
+    if (!rec) {
+        return rec;
+    }
+
+    return {
+        ...rec,
+        point: importAnimationPoint(rec.point),
+        center: importAnimationPoint(rec.center),
+        arcPoints: rec.arcPoints?.map(importAnimationPoint)
+    };
+}
+
+function exportAnimationPoint(point) {
+    if (!point) {
+        return point;
+    }
+
+    let out = {
+        x: point.x,
+        y: point.y,
+        z: point.z
+    };
+
+    if (point.a !== undefined) {
+        out.a = point.a;
+    }
+
+    return out;
+}
+
+function importAnimationPoint(point) {
+    if (!point) {
+        return point;
+    }
+
+    let out = newPoint(point.x, point.y, point.z);
+
+    if (point.a !== undefined) {
+        out.a = point.a;
+    }
+
+    return out;
+}
+
+function exportAnimationTool(tool) {
+    if (tool === null || tool === undefined) {
+        return tool;
+    }
+
+    if (typeof tool === "number" || typeof tool === "string") {
+        return tool;
+    }
+
+    if (tool.getID) {
+        return tool.getID();
+    }
+
+    return tool.id ?? tool.tool?.id ?? tool.number;
+}
+
 // catch clipper alerts and convert to console messages
 self.alert = function(o) {
     console.log(o);
@@ -357,6 +445,27 @@ const dispatch = {
         dispatch.cache = worker.cache = wcache = {};
         Widget.Groups.clear();
         send.done({ clear: true });
+    },
+
+    cam_anim_export(data, send) {
+        const { print } = current;
+
+        if (!print?.output) {
+            return send.done({ error: "missing prepared CAM output" });
+        }
+
+        send.done({
+            output: exportAnimationOutput(print.output)
+        });
+    },
+
+    cam_anim_import(data, send) {
+        const print = newPrint(data.settings, []);
+
+        print.output = importAnimationOutput(data.output);
+        setPrint(print);
+        current.mode = "CAM";
+        send.done({ done: true });
     },
 
     // widget sync
