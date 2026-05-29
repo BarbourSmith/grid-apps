@@ -69,6 +69,29 @@ function exportAnimationOutput(output) {
     return output.map(layer => Array.isArray(layer) ? layer.map(exportAnimationRecord) : layer);
 }
 
+function exportAnimationSettings(settings) {
+    return {
+        ...settings,
+        bounds: exportAnimationBox(settings.bounds),
+        origin: exportAnimationPoint(settings.origin),
+        stock: {
+            ...settings.stock,
+            center: exportAnimationPoint(settings.stock?.center)
+        }
+    };
+}
+
+function exportAnimationBox(box) {
+    if (!box) {
+        return box;
+    }
+
+    return {
+        min: exportAnimationPoint(box.min),
+        max: exportAnimationPoint(box.max)
+    };
+}
+
 function importAnimationOutput(output) {
     return output.map(layer => Array.isArray(layer) ? layer.map(importAnimationRecord) : layer);
 }
@@ -455,6 +478,7 @@ const dispatch = {
         }
 
         send.done({
+            settings: exportAnimationSettings(print.settings),
             output: exportAnimationOutput(print.output)
         });
     },

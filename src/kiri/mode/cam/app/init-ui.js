@@ -1086,7 +1086,7 @@ function transferAnimation(win, key) {
 
         const payload = {
             mode: "CAM",
-            settings: api.conf.get(),
+            settings: reply.settings,
             animVer: env.animVer,
             output: reply.output
         };
