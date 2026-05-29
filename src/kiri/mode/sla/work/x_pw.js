@@ -78,6 +78,7 @@ function encodeAnycubic(print, progress, photon, rec) {
             index,
             data: encoded,
             nonzero: countNonZero(raster),
+            layerHeight: process.slaSlice,
             liftHeight: bottom ? process.slaBasePeelDist : process.slaPeelDist,
             liftSpeed: (bottom ? process.slaBasePeelLiftRate : process.slaPeelLiftRate) * 60,
             exposure: bottom ? process.slaBaseOn : process.slaLayerOn,
@@ -328,7 +329,7 @@ function writeLayerDefinitions(writer, layers) {
         writer.writeF32(layer.liftHeight);
         writer.writeF32(layer.liftSpeed / 60);
         writer.writeF32(layer.exposure);
-        writer.writeF32(layer.z);
+        writer.writeF32(layer.layerHeight);
         writer.writeU32(layer.nonzero);
         writer.writeU32(0);
     });
@@ -573,7 +574,7 @@ function readLayerDefs(view, offset) {
             liftHeight: view.getFloat32(at + 8, true),
             liftSpeed: view.getFloat32(at + 12, true),
             exposure: view.getFloat32(at + 16, true),
-            z: view.getFloat32(at + 20, true),
+            layerHeight: view.getFloat32(at + 20, true),
             nonzero: view.getUint32(at + 24, true),
             padding: view.getUint32(at + 28, true)
         });

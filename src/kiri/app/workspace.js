@@ -154,6 +154,10 @@ function restore(ondone, skip_widget_load) {
         loaded = 0,
         position = true;
 
+    if (SETUP.cam_anim) {
+        skip_widget_load = true;
+    }
+
     api.conf.update_fields();
     platform.update_size();
 

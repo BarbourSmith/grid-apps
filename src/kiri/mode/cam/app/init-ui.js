@@ -642,11 +642,12 @@ export function init() {
         if (env.isAnimate || !env.isCamMode) {
             return;
         }
-        const transferWindow = mode?.transfer ? openAnimationWindow() : undefined;
+        const transferKey = mode?.transfer ? createTransferKey() : undefined;
+        const transferWindow = transferKey ? openAnimationWindow(transferKey) : undefined;
         api.function.prepare(() => {
             if (env.isCamMode) {
                 if (mode?.transfer) {
-                    return transferAnimation(transferWindow);
+                    return transferAnimation(transferWindow, transferKey);
                 }
                 animate();
             }
@@ -1059,16 +1060,22 @@ function animate() {
     api.view.set_animate();
 }
 
-function openAnimationWindow() {
+function createTransferKey() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes).map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+function openAnimationWindow(key) {
     let path = location.pathname;
     let kio = path.indexOf("/kiri/");
     let target = new URL(kio >= 0 ? path.substring(0, kio + 6) : "/kiri/", location.origin);
 
-    target.search = "mode:CAM";
+    target.search = `mode:CAM,cam_anim:${encodeURIComponent(key)}`;
     return window.open(target.toString(), "_blank");
 }
 
-function transferAnimation(win) {
+function transferAnimation(win, key) {
     api.show.busy("publishing animation");
     api.client.send("cam_anim_export", {}, reply => {
         if (reply?.error) {
@@ -1084,7 +1091,7 @@ function transferAnimation(win) {
             output: reply.output
         };
 
-        fetch(CAM_ANIM_API, {
+        fetch(`${CAM_ANIM_API}?key=${encodeURIComponent(key)}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -1099,14 +1106,8 @@ function transferAnimation(win) {
             if (error) {
                 throw new Error(error);
             }
-            let path = location.pathname;
-            let kio = path.indexOf("/kiri/");
-            let target = new URL(kio >= 0 ? path.substring(0, kio + 6) : "/kiri/", location.origin);
-            target.search = `mode:CAM,cam_anim:${encodeURIComponent(key)}`;
-            if (win && !win.closed) {
-                win.location = target.toString();
-            } else {
-                window.open(target.toString(), "_blank");
+            if (!win || win.closed) {
+                openAnimationWindow(key);
             }
             api.show.busy(false);
         }).catch(error => {
@@ -1124,14 +1125,25 @@ function receiveAnimationTransfer() {
     }
 
     api.show.busy("loading animation");
+    pollAnimationTransfer(key, 0);
+}
+
+function pollAnimationTransfer(key, tries) {
     fetch(`${CAM_ANIM_API}?key=${encodeURIComponent(key)}`)
         .then(res => {
+            if (res.status === 404 && tries < 600) {
+                setTimeout(() => pollAnimationTransfer(key, tries + 1), 1000);
+                return undefined;
+            }
             if (!res.ok) {
                 throw new Error(`transfer missing: ${res.status}`);
             }
             return res.json();
         })
         .then(payload => {
+            if (!payload) {
+                return;
+            }
             if (payload.error) {
                 throw new Error(payload.error);
             }

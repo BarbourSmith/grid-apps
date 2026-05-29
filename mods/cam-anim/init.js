@@ -24,7 +24,14 @@ module.exports = function(server) {
 
                 try {
                     let payload = JSON.parse(post);
-                    let key = util.guid().replace(/-/g, "");
+                    let url = new URL(req.url, "http://localhost");
+                    let key = url.searchParams.get("key") || util.guid().replace(/-/g, "");
+
+                    if (!/^[a-z0-9]{24,64}$/i.test(key)) {
+                        res.writeHead(400, "Bad Request");
+                        return res.end(JSON.stringify({ error: "invalid transfer key" }));
+                    }
+
                     transfers.set(key, {
                         created: Date.now(),
                         payload
