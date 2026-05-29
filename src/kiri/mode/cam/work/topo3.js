@@ -10,6 +10,7 @@ import { Tool } from '../core/tool.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
+const SharedOrArrayBuffer = globalThis.SharedArrayBuffer || ArrayBuffer;
 
 export class Topo {
     constructor() { }
@@ -56,7 +57,7 @@ export class Topo {
                 ? widtopo : undefined,
             topo = widget.topo = topoCache || {
                 axis,
-                data: new Float32Array(new SharedArrayBuffer(stepsX * stepsY * 4)),
+                data: new Float32Array(new SharedOrArrayBuffer(stepsX * stepsY * 4)),
                 stepsX,
                 stepsY,
                 bounds,

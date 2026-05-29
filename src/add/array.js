@@ -219,7 +219,8 @@ Object.assign(Array.prototype, AP);
 export { AP as arrayPrototype };
 
 Float32Array.prototype.toShared = function() {
-    const newvert = new Float32Array(new SharedArrayBuffer(this.buffer.byteLength));
+    const Buffer = globalThis.SharedArrayBuffer || ArrayBuffer;
+    const newvert = new Float32Array(new Buffer(this.buffer.byteLength));
     newvert.set(this);
     return newvert;
 };

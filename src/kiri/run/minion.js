@@ -23,6 +23,7 @@ const clib = self.ClipperLib;
 const ctyp = clib.ClipType;
 const ptyp = clib.PolyType;
 const cfil = clib.PolyFillType;
+const SharedOrArrayBuffer = globalThis.SharedArrayBuffer || ArrayBuffer;
 
 let cache = self.cache = {};
 let name = "unknown";
@@ -310,7 +311,7 @@ const funcs = self.minion = {
                 }
 
                 const points = codec.encodePointArray(lines.map(l => [ l.p1, l.p2 ]).flat());
-                const shared = new Float32Array(new SharedArrayBuffer(points.length * 4));
+                const shared = new Float32Array(new SharedOrArrayBuffer(points.length * 4));
                 shared.set(points);
 
                 return {

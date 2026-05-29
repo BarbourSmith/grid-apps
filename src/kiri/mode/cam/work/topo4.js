@@ -10,6 +10,7 @@ import { Slicer as topo_slicer } from './slicer-topo.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
+const SharedOrArrayBuffer = globalThis.SharedArrayBuffer || ArrayBuffer;
 
 function scale(fn, factor = 1, base = 0) {
     return (value, msg) => {
@@ -313,7 +314,7 @@ export class Topo {
                     slice.addTops(sliceConnect(rec.lines));
 
                     const points = codec.encodePointArray(rec.lines.map(l => [l.p1, l.p2]).flat());
-                    const shared = new Float32Array(new SharedArrayBuffer(points.length * 4));
+                    const shared = new Float32Array(new SharedOrArrayBuffer(points.length * 4));
                     shared.set(points);
                     slice.shared = shared;
 
