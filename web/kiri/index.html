@@ -25,6 +25,10 @@
             dde.style.background = isDark ? '#000000' : '#ffffff';
         }
         setDarkLight(isDark);
+        if (/(^|[?&,])cam_anim[:=]/.test(location.search)) {
+            document.documentElement.classList.add('cam-anim-view');
+            document.title = 'KM Animation';
+        }
     </script>
     <link rel="icon" href="/icon/kirimoto.png">
     <link rel="apple-touch-icon" href="/icon/kirimoto.png">

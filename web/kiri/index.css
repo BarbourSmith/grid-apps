@@ -2269,6 +2269,23 @@ details[open] summary::after {
 #panel-right .set2-group {
     border-left: 1px solid var(--border-gray);
 }
+
+html.cam-anim-view #menubar,
+html.cam-anim-view #mode-tools,
+html.cam-anim-view #panel-left,
+html.cam-anim-view #set-menu,
+html.cam-anim-view #panel-right {
+    display: none !important;
+}
+
+html.cam-anim-view #mid {
+    top: 0;
+}
+
+html.cam-anim-view #mid > .f-row.j-center {
+    display: none !important;
+}
+
 .set2-group {
     background-color: var(--menubar-back);
     flex-flow: column;

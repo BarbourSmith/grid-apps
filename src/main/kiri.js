@@ -15,6 +15,15 @@ import { surfaces } from '../kiri/app/init/build.js';
 let traceload = location.search.indexOf('traceload') > 0;
 let load = [];
 
+function setupCamAnimationView() {
+    if (!api.const.SETUP.cam_anim) {
+        return;
+    }
+
+    document.documentElement.classList.add('cam-anim-view');
+    document.title = 'KM Animation';
+}
+
 function safeExec(fn, name) {
     try {
         if (traceload) {
@@ -34,6 +43,7 @@ async function checkReady() {
         console.log(`kiri | boot ctrl | ` + (bootctrl ? true : false));
         kiri.api = api;
         self.$ = api.web.$;
+        setupCamAnimationView();
         {
             api.client.start();
             await init_lang();

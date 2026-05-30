@@ -89,9 +89,11 @@ export function updateStock() {
         return;
     }
 
-    api.platform.update_bounds();
-
     const settings = api.conf.get();
+    if (!api.const.SETUP.cam_anim) {
+        api.platform.update_bounds();
+    }
+
     const { stock, process } = settings;
     const { x, y, z, center } = stock;
 

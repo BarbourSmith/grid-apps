@@ -1169,11 +1169,54 @@ function pollAnimationTransfer(key, tries) {
 
 function applyTransferSettings(next) {
     const settings = api.conf.get();
+    const transfer = importTransferSettings(next);
 
     for (let key of Object.keys(settings)) {
         delete settings[key];
     }
 
-    Object.assign(settings, next, { mode: "CAM" });
+    Object.assign(settings, transfer, { mode: "CAM" });
+    if (transfer.bounds) {
+        api.platform.set_bounds(transfer.bounds);
+        Object.assign(settings, transfer, { mode: "CAM" });
+    }
     api.conf.update_fields();
+    updateStock();
+}
+
+function importTransferSettings(settings) {
+    return {
+        ...settings,
+        bounds: importTransferBox(settings.bounds),
+        origin: importTransferPoint(settings.origin),
+        stock: {
+            ...settings.stock,
+            center: importTransferPoint(settings.stock?.center)
+        }
+    };
+}
+
+function importTransferBox(box) {
+    if (!box) {
+        return box;
+    }
+
+    return new THREE.Box3(
+        importTransferPoint(box.min),
+        importTransferPoint(box.max)
+    );
+}
+
+function importTransferPoint(point) {
+    if (!point) {
+        return point;
+    }
+
+    let out = new THREE.Vector3(point.x, point.y, point.z);
+
+    if (point.a !== undefined) {
+        out.a = point.a;
+    }
+
+    return out;
 }
