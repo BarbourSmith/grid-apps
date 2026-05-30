@@ -35,14 +35,14 @@ export function init(worker) {
     const { dispatch, minions } = worker;
 
     dispatch.animate_setup2 = function (data, send) {
-        settings = data.settings;
+        const { print } = worker.current;
+        settings = data.fromPrint && print?.settings ? print.settings : data.settings;
 
         const { controller, process } = settings;
-        const { print } = worker.current;
         const isIndexed = process.camStockIndexed;
 
         pathIndex = 0;
-        path = print.output.flat();
+        path = print.output.flat().map(clonePathRecord);
         tools = settings.tools;
         stock = settings.stock;
         tool = null;
@@ -90,7 +90,21 @@ export function init(worker) {
         if (animating) {
             animateClear = true;
         }
+        send.done();
     };
+}
+
+function clonePathRecord(rec) {
+    return rec ? {
+        ...rec,
+        point: clonePoint(rec.point),
+        center: clonePoint(rec.center),
+        arcPoints: rec.arcPoints?.map(clonePoint)
+    } : rec;
+}
+
+function clonePoint(point) {
+    return point ? { ...point } : point;
 }
 
 function getToolID(tool) {

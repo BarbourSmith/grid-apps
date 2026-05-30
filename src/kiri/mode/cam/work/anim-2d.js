@@ -15,21 +15,21 @@ export function init(worker) {
     const { dispatch } = worker;
 
     dispatch.animate_setup = function(data, send) {
-        settings = data.settings;
+        const { print } = worker.current;
+        settings = data.fromPrint && print?.settings ? print.settings : data.settings;
 
         const { process } = settings;
-        const { print } = worker.current;
         const density = parseInt(settings.controller.animesh) * 1000;
 
         pathIndex = 0;
-        path = print.output.flat();
+        path = print.output.flat().map(clonePathRecord);
         tools = settings.tools;
         stock = settings.stock;
         rez = 1/Math.sqrt(density/(stock.x * stock.y));
 
         // destructure arcs into path points
         path = path.map(o =>
-            o.arcPoints ? [ ...o.arcPoints.map(point => ({ ...o, point })), o ] : [ o ]
+            o.arcPoints ? [ ...o.arcPoints.map(point => ({ ...o, point: clonePoint(point) })), o ] : [ o ]
         ).flat();
 
         const step = rez;
@@ -75,7 +75,21 @@ export function init(worker) {
         if (animating) {
             animateClear = true;
         }
+        send.done();
     };
+}
+
+function clonePathRecord(rec) {
+    return rec ? {
+        ...rec,
+        point: clonePoint(rec.point),
+        center: clonePoint(rec.center),
+        arcPoints: rec.arcPoints?.map(clonePoint)
+    } : rec;
+}
+
+function clonePoint(point) {
+    return point ? { ...point } : point;
 }
 
 function createGrid(stepsX, stepsY, size, step, stock) {

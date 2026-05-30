@@ -113,7 +113,10 @@ Object.assign(client, {
         });
         api.widgets.setColor(0x0055aa);
         api.widgets.setOpacity(0.5);
-        client.send("animate_setup2", { settings }, ondone);
+        client.send("animate_setup2", {
+            settings,
+            fromPrint: api.const.SETUP.cam_anim ? true : false
+        }, ondone);
     },
 
     animate_cleanup2(data, ondone) {

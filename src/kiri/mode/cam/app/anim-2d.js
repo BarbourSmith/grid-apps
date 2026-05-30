@@ -108,7 +108,10 @@ Object.assign(client, {
             side
         });
         add_red_neg_z(material);
-        client.send("animate_setup", {settings}, ondone);
+        client.send("animate_setup", {
+            settings,
+            fromPrint: api.const.SETUP.cam_anim ? true : false
+        }, ondone);
     },
 
     animate_cleanup(data, ondone) {
