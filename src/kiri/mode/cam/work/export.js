@@ -86,6 +86,32 @@ export function cam_export(print, online) {
         online({ section });
     }
 
+    function safeFilename(value) {
+        return String(value || '')
+            .trim()
+            .replace(/[\\/:*?"<>|]+/g, '-')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .substring(0, 80);
+    }
+
+    function sectionName(index, mode, layerout) {
+        const type = safeFilename(mode.type);
+        const out = layerout.find(out => out?.tool);
+        const tool = out?.tool;
+
+        if (!tool) {
+            return `op-${index}-${type}`;
+        }
+
+        const number = safeFilename(tool.getNumber());
+        const name = safeFilename(tool.getName());
+
+        return name ?
+            `op-${index}-${type}_T${number}-${name}` :
+            `op-${index}-${type}_T${number}`;
+    }
+
     function append(line) {
         if (line) {
             lines++;
@@ -486,7 +512,7 @@ export function cam_export(print, online) {
             }
             mode = newmode;
             if (mode) {
-                section(`op-${opnum++}-${mode.type}`);
+                section(sectionName(opnum++, mode, layerout));
             }
             if (!stripComments && mode) {
                 append("; starting " + mode.type + " op");
