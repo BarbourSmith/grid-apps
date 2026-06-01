@@ -321,7 +321,7 @@ class KeyboardControl {
             case this.#cca('?'):
                 this.#api.help.show();
                 break;
-            case this.#cca('h'):
+            case this.#cca('H'):
                 this.showHotKeys();
                 break;
             case this.#cca('Z'): // reset stored state
@@ -433,7 +433,7 @@ class KeyboardControl {
     showHotKeys() {
         const groups = [
             ["General", [
-                ["h", "show this hot-key reference"],
+                ["Shift+H", "show this hot-key reference"],
                 ["?", "open help"],
                 ["Esc", "close dialogs, cancel actions, clear selection"],
                 ["i", "import file"],
