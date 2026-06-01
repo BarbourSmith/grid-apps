@@ -339,6 +339,7 @@ function setup_keybd_nav() {
     // prevent modal input from propagating to parents
     ui.modalBox.onclick = (ev) => { ev.stopPropagation() };
 
+    $('help-hotkeys').onclick = (ev) => { ev.stopPropagation(); api.keyboard.showHotKeys() };
     $('export-support-a').onclick = (ev) => { ev.stopPropagation(); api.modal.show('don8') };
     $('mode-fdm').onclick = () => api.mode.set('FDM');
     $('mode-cam').onclick = () => api.mode.set('CAM');
