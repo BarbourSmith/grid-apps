@@ -31,7 +31,7 @@ export function animate_clear2(api) {
     api.uc.setVisible(anim.laba, true);
     api.uc.setVisible(anim.vala, true);
     anim.vala.value = "0.0";
-    client.animate_cleanup2();
+    client.animate_cleanup2(undefined, () => {});
 }
 
 export function animate2(api, delay) {
