@@ -44,6 +44,7 @@ let util;
 let dir;
 let log;
 let pre;
+let store;
 
 const EventEmitter = require('events');
 class AppEmitter extends EventEmitter {}
@@ -64,6 +65,17 @@ netdb.create = async function(map = {}) {
     logger.log({ netdb: map.host, user: map.user, base: map.base });
     return client;
 };
+
+function getStore() {
+    return store || (store = netdb.create({
+        host: "localhost",
+        port: 1336,
+        user: "kiri",
+        pass: "kiri",
+        base: "gs-kiri",
+        conf: `${util.confdir()}/ndb_kiri.json`
+    }));
+}
 
 function init(mod) {
     const ENV = mod.env;
@@ -280,6 +292,7 @@ function loadModule(mod, dir) {
 function initModule(mod, file, dir) {
     logger.log({ module: file, dir });
     require_fresh(file)({
+        get store() { return getStore() },
         // express functions added here show up at "/api/" url root
         api,
         adm: {

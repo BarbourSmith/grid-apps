@@ -2,18 +2,21 @@
 
 module.exports = function(server) {
     const { api, handler, util } = server;
-    const transfers = new Map();
+    const store = server.store;
+    const prefix = "/cam-anim/";
     const ttl = 10 * 60 * 1000;
     const maxBytes = 200 * 1024 * 1024;
 
-    setInterval(purge, ttl / 2).unref?.();
+    setInterval(() => purge().catch(error => {
+        util.log({ cam_anim_purge_error: error.message || String(error) });
+    }), ttl / 2).unref?.();
 
     api.cam_anim = (req, res, next) => {
         handler.addCORS(req, res);
         res.setHeader("Cache-Control", "no-cache, no-store, private");
 
         if (req.method === "POST") {
-            return handler.decodePost(req, res, () => {
+            return handler.decodePost(req, res, async () => {
                 let post = req.app.post;
                 let bytes = Buffer.isBuffer(post) ? post.length : Buffer.byteLength(post || "");
 
@@ -32,8 +35,9 @@ module.exports = function(server) {
                         return res.end(JSON.stringify({ error: "invalid transfer key" }));
                     }
 
-                    transfers.set(key, {
+                    await (await store).put(path(key), {
                         created: Date.now(),
+                        bytes,
                         payload
                     });
                     res.setHeader("Content-Type", "application/json");
@@ -46,31 +50,55 @@ module.exports = function(server) {
         }
 
         if (req.method === "GET") {
-            let url = new URL(req.url, "http://localhost");
-            let key = url.searchParams.get("key") || "";
-            let rec = transfers.get(key);
-
-            res.setHeader("Content-Type", "application/json");
-
-            if (!rec) {
-                res.writeHead(404, "Not Found");
-                return res.end(JSON.stringify({ error: "missing transfer" }));
-            }
-
-            transfers.delete(key);
-            return res.end(JSON.stringify(rec.payload));
+            return getTransfer(req, res).catch(error => {
+                res.writeHead(500, "Internal Server Error");
+                res.end(JSON.stringify({ error: error.message || String(error) }));
+            });
         }
 
         next();
     };
 
-    function purge() {
-        let now = Date.now();
+    async function getTransfer(req, res) {
+        let url = new URL(req.url, "http://localhost");
+        let key = url.searchParams.get("key") || "";
+        let db = await store;
+        let rec = await db.get(path(key));
 
-        for (let [ key, rec ] of transfers) {
-            if (now - rec.created > ttl) {
-                transfers.delete(key);
-            }
+        res.setHeader("Content-Type", "application/json");
+
+        if (!rec) {
+            res.writeHead(404, "Not Found");
+            return res.end(JSON.stringify({ error: "missing transfer" }));
         }
+
+        await db.del(path(key));
+
+        if (Date.now() - rec.created > ttl) {
+            res.writeHead(404, "Not Found");
+            return res.end(JSON.stringify({ error: "expired transfer" }));
+        }
+
+        return res.end(JSON.stringify(rec.payload));
+    }
+
+    async function purge() {
+        let db = await store;
+        let now = Date.now();
+        let stale = [];
+
+        await db.list({ pre: prefix }, (key, rec) => {
+            if (now - rec?.created > ttl) {
+                stale.push(key);
+            }
+        });
+
+        for (let key of stale) {
+            await db.del(key);
+        }
+    }
+
+    function path(key) {
+        return `${prefix}${key}`;
     }
 };

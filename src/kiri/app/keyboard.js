@@ -321,6 +321,9 @@ class KeyboardControl {
             case this.#cca('?'):
                 this.#api.help.show();
                 break;
+            case this.#cca('h'):
+                this.showHotKeys();
+                break;
             case this.#cca('Z'): // reset stored state
                 this.#uc.confirm('clear all settings and preferences?').then(yes => {
                     if (yes) {
@@ -425,6 +428,81 @@ class KeyboardControl {
             evt.stopPropagation();
         }
         return false;
+    }
+
+    showHotKeys() {
+        const groups = [
+            ["General", [
+                ["h", "show this hot-key reference"],
+                ["?", "open help"],
+                ["Esc", "close dialogs, cancel actions, clear selection"],
+                ["i", "import file"],
+                ["r", "recent files"],
+                ["q", "preferences"],
+                ["e", "machine setup"],
+                ["o", "CAM tools"],
+                ["l", "load settings"],
+                ["Ctrl+S", "save settings"],
+                ["Cmd+S", "save workspace"],
+                ["Cmd+L", "restore workspace"],
+                ["Z", "clear all settings and preferences"],
+                ["C", "refresh catalog"]
+            ]],
+            ["Workflow", [
+                ["a", "arrange or return to arrange view"],
+                ["s", "slice"],
+                ["p", "preview / prepare"],
+                ["x", "export"],
+                ["g", "CAM animate"]
+            ]],
+            ["View", [
+                ["`", "show first slice"],
+                ["0", "show all slices"],
+                ["1-9", "show 10%-90% of slice stack"],
+                ["v", "toggle single-slice view"],
+                ["Cmd+Up", "next layer"],
+                ["Cmd+Down", "previous layer"],
+                ["w", "toggle transparent model"],
+                ["W", "toggle wireframe model"],
+                ["Ctrl+W", "toggle model edges"]
+            ]],
+            ["Selection", [
+                ["Cmd/Ctrl+A", "select all"],
+                ["Delete", "delete selected objects"],
+                ["d", "duplicate selected objects"],
+                ["m", "mirror selected objects"],
+                ["O", "manual rotation"],
+                ["Arrow keys", "rotate selected objects"],
+                ["Shift+Arrow", "fine rotate selected objects"],
+                ["Alt+Arrow", "move selected objects"]
+            ]],
+            ["CAM Operations", [
+                ["Drag op", "reorder operation list"],
+                ["Shift+Click op", "duplicate operation"],
+                ["Ctrl/Cmd+Click op", "toggle operation enable / disable"],
+                ["Ctrl/Cmd+Shift+Click op", "apply enable / disable state to all operations"],
+                ["Click op note", "edit operation note"]
+            ]]
+        ];
+
+        const rows = groups.map(([title, keys]) => [
+            `<section>`,
+            `<h3>${title}</h3>`,
+            `<div class="hotkey-grid">`,
+            ...keys.map(([key, action]) =>
+                `<div><kbd>${key}</kbd></div><label>${action}</label>`
+            ),
+            `</div>`,
+            `</section>`
+        ].join('')).join('');
+
+        $('mod-any').innerHTML = [
+            `<div class="hotkeys-dialog f-col">`,
+            `<div class="title">Keyboard Shortcuts</div>`,
+            `<div class="hotkeys-sections">${rows}</div>`,
+            `</div>`
+        ].join('');
+        this.#api.modal.show('any');
     }
 
     /**

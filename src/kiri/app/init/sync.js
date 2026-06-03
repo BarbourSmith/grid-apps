@@ -102,11 +102,11 @@ export async function init_sync() {
     }
 
     // warn of degraded functionality when SharedArrayBuffers are missing
-    if (api.feature.work_alerts && !window.SharedArrayBuffer) {
-        api.alerts.show("The security context of this", 10);
-        api.alerts.show("Window blocks important functionality.", 10);
-        api.alerts.show("Try a Chromium-base Browser instead", 10);
-    }
+    // if (api.feature.work_alerts && !window.SharedArrayBuffer) {
+    //     api.alerts.show("The security context of this", 10);
+    //     api.alerts.show("Window blocks important functionality.", 10);
+    //     api.alerts.show("Try a Chromium-base Browser instead", 10);
+    // }
 
     // add keyboard focus handler (must use for iframes)
     WIN.addEventListener('load', function () {
@@ -339,6 +339,7 @@ function setup_keybd_nav() {
     // prevent modal input from propagating to parents
     ui.modalBox.onclick = (ev) => { ev.stopPropagation() };
 
+    $('help-hotkeys').onclick = (ev) => { ev.stopPropagation(); api.keyboard.showHotKeys() };
     $('export-support-a').onclick = (ev) => { ev.stopPropagation(); api.modal.show('don8') };
     $('mode-fdm').onclick = () => api.mode.set('FDM');
     $('mode-cam').onclick = () => api.mode.set('CAM');
