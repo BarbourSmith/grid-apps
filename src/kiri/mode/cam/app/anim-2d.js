@@ -28,7 +28,7 @@ let meshes = {},
 export function animate_clear(api) {
     let { anim } = api.ui;
     space.platform.showGridBelow(true);
-    client.animate_cleanup();
+    client.animate_cleanup(undefined, () => {});
     Object.keys(meshes).forEach(id => deleteMesh(id));
     toggleStock(undefined,true,false);
     api.uc.setVisible(anim.laba, false);
