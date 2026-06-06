@@ -102,11 +102,11 @@ export async function init_sync() {
     }
 
     // warn of degraded functionality when SharedArrayBuffers are missing
-    if (api.feature.work_alerts && !window.SharedArrayBuffer) {
-        api.alerts.show("The security context of this", 10);
-        api.alerts.show("Window blocks important functionality.", 10);
-        api.alerts.show("Try a Chromium-base Browser instead", 10);
-    }
+    // if (api.feature.work_alerts && !window.SharedArrayBuffer) {
+    //     api.alerts.show("The security context of this", 10);
+    //     api.alerts.show("Window blocks important functionality.", 10);
+    //     api.alerts.show("Try a Chromium-base Browser instead", 10);
+    // }
 
     // add keyboard focus handler (must use for iframes)
     WIN.addEventListener('load', function () {
@@ -120,7 +120,9 @@ export async function init_sync() {
     setup_keybd_nav();
 
     // show topline separator when iframed
-    try { if (WIN.self !== WIN.top) $('top-sep').style.display = 'flex' } catch (e) { console.log(e) }
+    if (WIN.self !== WIN.top) {
+        $('menubar').classList.add('top');
+    }
 
     // warn users they are running a beta release
     if (beta && beta > 0 && sdb.kiri_beta != beta) {
@@ -218,22 +220,127 @@ function ui_sync() {
 }
 
 function setup_keybd_nav() {
+    const panelPosKeys = {
+        'panel-rotate': 'win.roate',
+        'panel-scale': 'win.scale'
+    };
+
+    function parsePanelPos(key) {
+        if (!key) return null;
+        const raw = api.local.get(key);
+        if (!raw) return null;
+        if (typeof raw === 'object' && raw.left !== undefined && raw.top !== undefined) {
+            return raw;
+        }
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && parsed.left !== undefined && parsed.top !== undefined) {
+                    return parsed;
+                }
+            } catch (e) {
+                // ignore malformed stored values
+            }
+        }
+        return null;
+    }
+
+    function placePanel(panel, pos) {
+        if (!panel || !pos) return;
+        panel.style.left = `${Math.round(pos.left)}px`;
+        panel.style.top = `${Math.round(pos.top)}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+    }
+
+    function placePanelDefault(panel) {
+        if (!panel) return;
+        const rect = panel.getBoundingClientRect();
+        const width = rect.width || 260;
+        const modeToolsRect = $('mode-tools')?.getBoundingClientRect();
+        const baseTop = modeToolsRect ? (modeToolsRect.bottom + 10) : 92;
+        const minPad = 8;
+        const maxLeft = Math.max(minPad, window.innerWidth - width - minPad);
+        const left = Math.min(maxLeft, Math.max(minPad, (window.innerWidth - width) / 2));
+        placePanel(panel, { left, top: baseTop });
+    }
+
+    function showSelectionPanel(pid) {
+        const panel = $(pid);
+        if (!panel) return;
+        panel.classList.remove('hide');
+        const key = panelPosKeys[pid];
+        const saved = parsePanelPos(key);
+        if (saved) {
+            placePanel(panel, saved);
+        } else {
+            placePanelDefault(panel);
+        }
+    }
+
+    function hideSelectionPanel(pid) {
+        const panel = $(pid);
+        if (!panel) return;
+        panel.classList.add('hide');
+    }
+
+    function toggleSelectionPanel(pid) {
+        const el = $(pid);
+        if (!el) return;
+        if (el.classList.contains('hide')) {
+            showSelectionPanel(pid);
+        } else {
+            hideSelectionPanel(pid);
+        }
+    }
+
+    function makePanelDraggable(panelId, handleId, storageKey) {
+        const panel = $(panelId);
+        const handle = $(handleId);
+        if (!panel || !handle) return;
+        let sx = 0, sy = 0, px = 0, py = 0, dragging = false;
+        handle.onmousedown = (ev) => {
+            if (ev.button !== 0) return;
+            dragging = true;
+            sx = ev.clientX;
+            sy = ev.clientY;
+            const rect = panel.getBoundingClientRect();
+            px = rect.left;
+            py = rect.top;
+            ev.preventDefault();
+            ev.stopPropagation();
+        };
+        document.addEventListener('mousemove', (ev) => {
+            if (!dragging) return;
+            const nx = px + (ev.clientX - sx);
+            const ny = py + (ev.clientY - sy);
+            panel.style.left = `${Math.round(nx)}px`;
+            panel.style.top = `${Math.round(ny)}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+        });
+        document.addEventListener('mouseup', () => {
+            if (dragging && storageKey) {
+                const rect = panel.getBoundingClientRect();
+                api.local.set(storageKey, JSON.stringify({
+                    left: Math.round(rect.left),
+                    top: Math.round(rect.top)
+                }));
+            }
+            dragging = false;
+        });
+    }
+
     // bind interface action elements
     ui.acct.help.onclick = (ev) => { ev.stopPropagation(); api.help.show() };
     ui.acct.don8.onclick = (ev) => { ev.stopPropagation(); api.modal.show('don8') };
-    ui.acct.mesh.onclick = (ev) => { ev.stopPropagation(); WIN.location = "/mesh" };
     ui.acct.export.onclick = (ev) => { ev.stopPropagation(); settingsOps.export_profile() };
     ui.acct.export.title = LANG.acct_xpo;
-    ui.func.slice.onclick = (ev) => { ev.stopPropagation(); api.function.slice() };
-    ui.func.preview.onclick = (ev) => { ev.stopPropagation(); api.function.print() };
-    ui.func.animate.onclick = (ev) => { ev.stopPropagation(); api.function.animate() };
-    ui.func.export.onclick = (ev) => { ev.stopPropagation(); api.function.export() };
     // prevent modal input from propagating to parents
     ui.modalBox.onclick = (ev) => { ev.stopPropagation() };
 
+    $('help-hotkeys').onclick = (ev) => { ev.stopPropagation(); api.keyboard.showHotKeys() };
     $('export-support-a').onclick = (ev) => { ev.stopPropagation(); api.modal.show('don8') };
-    $('mode-device').onclick = api.show.devices;
-    $('mode-profile').onclick = settingsOps.settings_load;
     $('mode-fdm').onclick = () => api.mode.set('FDM');
     $('mode-cam').onclick = () => api.mode.set('CAM');
     $('mode-sla').onclick = () => api.mode.set('SLA');
@@ -248,13 +355,8 @@ function setup_keybd_nav() {
     $('file-new').onclick = (ev) => { ev.stopPropagation(); settingsOps.new_workspace() };
     $('file-recent').onclick = () => { api.modal.show('files') };
     $('file-import').onclick = (ev) => { api.event.import(ev); };
-    $('view-arrange').onclick = api.platform.layout;
     $('view-top').onclick = space.view.top;
     $('view-home').onclick = space.view.home;
-    $('view-front').onclick = space.view.front;
-    $('view-back').onclick = space.view.back;
-    $('view-left').onclick = space.view.left;
-    $('view-right').onclick = space.view.right;
 
     $('unrotate').onclick = () => {
         api.widgets.for(w => w.unrotate());
@@ -308,14 +410,23 @@ function setup_keybd_nav() {
     $('mesh-split').onclick = selection.isolateBodies;
     $('context-duplicate').onclick = selection.duplicate;
     $('context-mirror').onclick = selection.mirror;
+    $('context-rotate-panel').onclick = () => toggleSelectionPanel('panel-rotate');
+    $('context-scale-panel').onclick = () => toggleSelectionPanel('panel-scale');
+    $('panel-rotate-close').onmousedown = (ev) => { ev.stopPropagation(); };
+    $('panel-scale-close').onmousedown = (ev) => { ev.stopPropagation(); };
+    $('panel-rotate-close').onclick = (ev) => { ev.stopPropagation(); hideSelectionPanel('panel-rotate'); };
+    $('panel-scale-close').onclick = (ev) => { ev.stopPropagation(); hideSelectionPanel('panel-scale'); };
     $('context-layflat').onclick = view_tools.startLayFlat;
     $('context-lefty').onclick = view_tools.startLeftAlign;
     $('context-setfocus').onclick = () => {
         view_tools.startFocus(ev => api.space.set_focus(undefined, ev.object.point));
     };
-    $('context-contents').onclick = api.const.SPACE.view.fit;
+    // $('context-contents').onclick = api.const.SPACE.view.fit;
     $('view-fit').onclick = api.const.SPACE.view.fit;
     $('wassup').onmouseover = () => { $('suppopp').classList.remove('hide') };
+
+    makePanelDraggable('panel-rotate', 'panel-rotate-head', 'win.roate');
+    makePanelDraggable('panel-scale', 'panel-scale-head', 'win.scale');
 
     // enable modal hiding
     $('mod-x').onclick = api.modal.hide;
@@ -335,7 +446,4 @@ function setup_keybd_nav() {
     } catch (e) {
         console.log('iOS remediation fail', e);
     }
-
-    // add app name hover info
-    $('app-info').innerText = version;
 }

@@ -598,7 +598,7 @@ export function createPopOps() {
         sep: UC.newBlank({ class: "pop-sep" }),
         thru: UC.newInput(LANG.cd_dtru_s, { title: LANG.cd_dtru_l, convert: toFloat, units, show: () => !env.poppedRec.mark }),
         precision: UC.newInput(LANG.cd_prcn_s, { title: LANG.cd_prcn_l, convert: toFloat, units, show: () => !env.poppedRec.mark }),
-        sep: UC.newBlank({ class: "pop-sep", }),
+        sep: UC.newBlank({ class: "pop-sep", show: () => !env.poppedRec.mark }),
         actions: UC.newRow([
             UC.newButton(LANG.select, () => selectHoles(true), { title: LANG.cd_seli_l }),
             UC.newButton(LANG.cd_sela_s, () => selectHoles(false), { title: LANG.cd_sela_l })
@@ -778,6 +778,7 @@ export function createPopOps() {
         revbones: 'camAreaRevbones',
         ov_topz: 0,
         ov_botz: 0,
+        finish_cut: 0,
     }).inputs = {
         mode: UC.newSelect(LANG.mo_menu, { post: opRender }, "opmode"),
         tr_type: UC.newSelect(LANG.cc_offs_s, { title: LANG.cc_offs_l, show: isTrace }, "traceoff"),
@@ -805,6 +806,7 @@ export function createPopOps() {
         sr_angle: UC.newInput(LANG.ca_sang_s, { title: LANG.ca_sang_l, convert: toFloat, bound: UC.bound(0, 360), show: isSurfaceLinear }),
         over: UC.newInput(LANG.cc_sovr_s, { title: LANG.cc_sovr_l, convert: toFloat, bound: UC.bound(0.001, 100.0), show: () => isClear() || isSurface() }),
         down: UC.newInput(LANG.cc_sdwn_s, { title: LANG.cc_sdwn_l, convert: toFloat, bound: UC.bound(0, 100.0), units, show: () => isClear() || isTrace() }),
+        finish_cut: UC.newInput(LANG.ca_fini_s, { title: LANG.ca_fini_l, convert: toFloat, bound: UC.bound(0, 10.0), units, show: () => isClear() }), //todo: needs to check camInnerFirst
         refine: UC.newInput(LANG.cp_refi_s, { title: LANG.cp_refi_l, convert: toInt, show: isSurface }),
         sr_alter: UC.newBoolean(LANG.ca_altr_s, undefined, { title: LANG.ca_altr_l, show: isSurfaceLinear }),
         dogbones: UC.newBoolean(LANG.co_dogb_s, undefined, { title: LANG.co_dogb_l, show: isTrace }),

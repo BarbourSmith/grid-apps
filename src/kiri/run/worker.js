@@ -39,7 +39,7 @@ let drivers = {
         WJET
     },
     ccvalue = self.navigator ? self.navigator.hardwareConcurrency || 0 : 0,
-    concurrent = Math.min(4, self.Worker && ccvalue > 3 ? ccvalue - 1 : 0),
+    concurrent = Math.round(Math.max(4, self.Worker && ccvalue > 3 ? ccvalue * 0.75 : 0)),
     current = {
         print: null,
         snap: null,
@@ -63,6 +63,117 @@ function setPrint(print) {
         current.print.disposeSafeEval();
     }
     return current.print = print;
+}
+
+function exportAnimationOutput(output) {
+    return output.map(layer => Array.isArray(layer) ? layer.map(exportAnimationRecord) : layer);
+}
+
+function exportAnimationSettings(settings) {
+    return {
+        ...settings,
+        bounds: exportAnimationBox(settings.bounds),
+        origin: exportAnimationPoint(settings.origin),
+        stock: {
+            ...settings.stock,
+            center: exportAnimationPoint(settings.stock?.center)
+        }
+    };
+}
+
+function exportAnimationBox(box) {
+    if (!box) {
+        return box;
+    }
+
+    return {
+        min: exportAnimationPoint(box.min),
+        max: exportAnimationPoint(box.max)
+    };
+}
+
+function importAnimationOutput(output) {
+    return output.map(layer => Array.isArray(layer) ? layer.map(importAnimationRecord) : layer);
+}
+
+function exportAnimationRecord(rec) {
+    if (!rec) {
+        return rec;
+    }
+
+    return {
+        point: exportAnimationPoint(rec.point),
+        emit: rec.emit,
+        speed: rec.speed,
+        tool: exportAnimationTool(rec.tool),
+        type: rec.type,
+        center: exportAnimationPoint(rec.center),
+        clockwise: rec.clockwise,
+        distance: rec.distance,
+        retract: rec.retract,
+        arcPoints: rec.arcPoints?.map(exportAnimationPoint)
+    };
+}
+
+function importAnimationRecord(rec) {
+    if (!rec) {
+        return rec;
+    }
+
+    return {
+        ...rec,
+        point: importAnimationPoint(rec.point),
+        center: importAnimationPoint(rec.center),
+        arcPoints: rec.arcPoints?.map(importAnimationPoint)
+    };
+}
+
+function exportAnimationPoint(point) {
+    if (!point) {
+        return point;
+    }
+
+    let out = {
+        x: point.x,
+        y: point.y,
+        z: point.z
+    };
+
+    if (point.a !== undefined) {
+        out.a = point.a;
+    }
+
+    return out;
+}
+
+function importAnimationPoint(point) {
+    if (!point) {
+        return point;
+    }
+
+    let out = newPoint(point.x, point.y, point.z);
+
+    if (point.a !== undefined) {
+        out.a = point.a;
+    }
+
+    return out;
+}
+
+function exportAnimationTool(tool) {
+    if (tool === null || tool === undefined) {
+        return tool;
+    }
+
+    if (typeof tool === "number" || typeof tool === "string") {
+        return tool;
+    }
+
+    if (tool.getID) {
+        return tool.getID();
+    }
+
+    return tool.id ?? tool.tool?.id ?? tool.number;
 }
 
 // catch clipper alerts and convert to console messages
@@ -172,6 +283,16 @@ const minwork = {
                 cmd, ...data
             }, direct);
         }
+    },
+
+    setPoints(points) {
+        let i = 0, floatP = new Float32Array(points.length * 3);
+        for (let p of points) {
+            floatP[i++] = p.x;
+            floatP[i++] = p.y;
+            floatP[i++] = p.z;
+        }
+        minwork.broadcast("setPoints", { points: floatP });
     },
 
     // added functions (should be namespaced)
@@ -285,17 +406,9 @@ const minwork = {
                 reject("concurrent slice unavaiable");
             }
             let { each } = options;
-            // todo use shared array buffer?
-            let i = 0, floatP = new Float32Array(points.length * 3);
-            for (let p of points) {
-                floatP[i++] = p.x;
-                floatP[i++] = p.y;
-                floatP[i++] = p.z;
-            }
             minwork.queue({
                 cmd: "sliceZ",
                 z,
-                points: floatP,
                 options: codec.toCodable(options)
             }, data => {
                 let recs = codec.decode(data.output);
@@ -305,7 +418,7 @@ const minwork = {
                     }
                 }
                 resolve(recs);
-            }, [ floatP.buffer ]);
+            });
         });
     },
 };
@@ -355,6 +468,28 @@ const dispatch = {
         dispatch.cache = worker.cache = wcache = {};
         Widget.Groups.clear();
         send.done({ clear: true });
+    },
+
+    cam_anim_export(data, send) {
+        const { print } = current;
+
+        if (!print?.output) {
+            return send.done({ error: "missing prepared CAM output" });
+        }
+
+        send.done({
+            settings: exportAnimationSettings(print.settings),
+            output: exportAnimationOutput(print.output)
+        });
+    },
+
+    cam_anim_import(data, send) {
+        const print = newPrint(data.settings, []);
+
+        print.output = importAnimationOutput(data.output);
+        setPrint(print);
+        current.mode = "CAM";
+        send.done({ done: true });
     },
 
     // widget sync
@@ -554,7 +689,7 @@ const dispatch = {
         });
     },
 
-    export(data, send) {
+    async export(data, send) {
         const mode = data.settings.mode;
         const driver = drivers[mode];
 
@@ -564,7 +699,7 @@ const dispatch = {
         }
 
         let output;
-        driver.export(current.print, (line, direct) => {
+        let result = driver.export(current.print, (line, direct) => {
             send.data({line}, direct);
         }, (done) => {
             // SLA workaround
@@ -572,6 +707,9 @@ const dispatch = {
         }, (debug) => {
             send.data({debug});
         });
+        if (result && result.then) {
+            await result;
+        }
 
         const {
             bounds,

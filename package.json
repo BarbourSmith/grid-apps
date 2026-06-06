@@ -1,6 +1,6 @@
 {
     "name": "grid-apps",
-    "version": "4.6.3",
+    "version": "4.7.0",
     "description": "grid.space 3d slicing & modeling tools",
     "author": "Stewart Allen <sa@grid.space>",
     "license": "MIT",
@@ -85,8 +85,11 @@
         "imports-loader": "^5.0.0",
         "node-fetch": "^3.3.2",
         "terser-webpack-plugin": "^5.3.10",
-        "webpack": "^5.92.1",
+        "webpack": "5.102.1",
         "webpack-cli": "^5.1.4"
+    },
+    "overrides": {
+        "webpack": "5.102.1"
     },
     "scripts": {
         "build-debug": "npm run prebuild && cross-env DEBUG=electron-builder electron-builder",

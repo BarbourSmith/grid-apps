@@ -28,7 +28,7 @@ let meshes = {},
 export function animate_clear(api) {
     let { anim } = api.ui;
     space.platform.showGridBelow(true);
-    client.animate_cleanup();
+    client.animate_cleanup(undefined, () => {});
     Object.keys(meshes).forEach(id => deleteMesh(id));
     toggleStock(undefined,true,false);
     api.uc.setVisible(anim.laba, false);
@@ -36,7 +36,7 @@ export function animate_clear(api) {
 }
 
 export function animate(api, delay) {
-    let alert = api.alerts.show("building animation");
+    api.show.busy("building animation");
     let settings = api.conf.get();
     client.animate_setup(settings, data => {
         checkMeshCommands(data);
@@ -80,7 +80,7 @@ export function animate(api, delay) {
         button.pause.style.display = 'none';
 
         api.event.emit('animate', 'CAM');
-        api.alerts.hide(alert);
+        api.show.busy(false);
         space.platform.showGridBelow(false);
         toggleTrans(0,api.local.getBoolean('cam.anim.trans', true));
         toggleModel(0,api.local.getBoolean('cam.anim.model', false));
@@ -108,7 +108,10 @@ Object.assign(client, {
             side
         });
         add_red_neg_z(material);
-        client.send("animate_setup", {settings}, ondone);
+        client.send("animate_setup", {
+            settings,
+            fromPrint: api.const.SETUP.cam_anim ? true : false
+        }, ondone);
     },
 
     animate_cleanup(data, ondone) {

@@ -26,6 +26,7 @@ const { BufferGeometryUtils } = THREE;
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const hasSharedArrays = self.SharedArrayBuffer ? true : false;
+const CAM_ANIM_API = "/api/cam_anim";
 
 const { VIEWS, STACKS } = api.const;
 const { noop } = api;
@@ -339,7 +340,7 @@ export function opRender() {
             `<div id="${mark + i}" class="${clazz.join(' ')}"${title}>`,
             `<label class="label">${label}</label>`,
             clock ? '' :
-                `<label id="${mark + i}-x" class="del"><i class="fa fa-trash"></i></label>`,
+                `<label id="${mark + i}-x" class="del"><i class="fa-solid fa-xmark"></i></label>`,
             `</div>`
         ]);
         bind[mark + i] = rec;
@@ -421,9 +422,10 @@ export function opRender() {
             const brect = ev.target.getBoundingClientRect();
             const prect = parent.getBoundingClientRect();
             const Prect = poprec.div.getBoundingClientRect();
-            const tdiff = prect.top - brect.top;
-            const botoff = innerHeight - (brect.top + Prect.height);
-            const offpx = -tdiff + (botoff < 0 ? botoff : -Prect.height/3);
+            const topmv = brect.top - prect.top - Math.min(50, Prect.height/5);
+            const topnu = prect.top + topmv;
+            const botof = innerHeight - (topnu + Prect.height);
+            const offpx = botof < 0 ? topmv + botof : topmv;
             poprec.div.style.transform = `translateY(${offpx}px)`;
             poprec.div.onmouseenter = () => { inside = true };
             poprec.div.onmouseleave = onLeave;
@@ -640,8 +642,13 @@ export function init() {
         if (env.isAnimate || !env.isCamMode) {
             return;
         }
+        const transferKey = mode?.transfer ? createTransferKey() : undefined;
+        const transferWindow = transferKey ? openAnimationWindow(transferKey) : undefined;
         api.function.prepare(() => {
             if (env.isCamMode) {
+                if (mode?.transfer) {
+                    return transferAnimation(transferWindow, transferKey);
+                }
                 animate();
             }
         });
@@ -803,6 +810,8 @@ export function init() {
         }
     });
 
+    api.event.on("init-done", receiveAnimationTransfer);
+
     $('op-add').onmouseenter = () => {
         if (env.func.unpop) env.func.unpop();
     };
@@ -905,20 +914,22 @@ export function init() {
         clearPops();
         recreateTabs();
         for (let group of Widget.Groups.list()) {
-            let root = group[0];
-            if (root.tabs)
-            for (let tab of Object.values(root.tabs)) {
-                let geo = tab.box.geometry.clone();
-                if (geo.index) geo = geo.toNonIndexed();
-                geo.translate(tab.x, tab.y, tab.z);
-                let bbg = BufferGeometryUtils.mergeGeometries([ geo ]);
-                let sw = newWidget(null, group);
-                let fwp = group[0].track.pos;
-                sw.loadGeometry(bbg);
-                sw._move(fwp.x, fwp.y, fwp.z);
-                api.widgets.add(sw);
-                sw.track.synth = true;
-                sw.track.indexed = root.track.indexed;
+            for (let widget of group) {
+                if (widget.tabs)
+                for (let tab of Object.values(widget.tabs)) {
+                    let geo = tab.box.geometry.clone();
+                    if (geo.index) geo = geo.toNonIndexed();
+                    geo.translate(tab.x, tab.y, tab.z);
+                    let bbg = BufferGeometryUtils.mergeGeometries([ geo ]);
+                    let sw = newWidget(null, group);
+                    let fwp = widget.track.pos;
+                    sw.loadGeometry(bbg);
+                    sw._move(fwp.x, fwp.y, fwp.z);
+                    api.widgets.add(sw);
+                    sw.track.synth = true;
+                    sw.track.indexed = widget.track.indexed;
+                    sw.track.tabOwner = widget.id;
+                }
             }
         }
     });
@@ -1047,4 +1058,165 @@ function animate() {
     STACKS.clear();
     animFn().animate(api);
     api.view.set_animate();
+}
+
+function createTransferKey() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes).map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+function openAnimationWindow(key) {
+    let path = location.pathname;
+    let kio = path.indexOf("/kiri/");
+    let target = new URL(kio >= 0 ? path.substring(0, kio + 6) : "/kiri/", location.origin);
+
+    target.search = `mode:CAM,cam_anim:${encodeURIComponent(key)}`;
+    return window.open(target.toString(), "_blank");
+}
+
+function transferAnimation(win, key) {
+    api.show.busy("publishing animation");
+    api.client.send("cam_anim_export", {}, reply => {
+        if (reply?.error) {
+            api.show.busy(false);
+            api.show.alert(reply.error, 5);
+            return;
+        }
+
+        const payload = {
+            mode: "CAM",
+            settings: reply.settings,
+            animVer: env.animVer,
+            output: reply.output
+        };
+
+        fetch(`${CAM_ANIM_API}?key=${encodeURIComponent(key)}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        }).then(res => {
+            if (!res.ok) {
+                throw new Error(`transfer failed: ${res.status}`);
+            }
+            return res.json();
+        }).then(({ key, error }) => {
+            if (error) {
+                throw new Error(error);
+            }
+            if (!win || win.closed) {
+                openAnimationWindow(key);
+            }
+            api.show.busy(false);
+        }).catch(error => {
+            api.show.busy(false);
+            api.show.alert(error.message || String(error), 5);
+        });
+    });
+}
+
+function receiveAnimationTransfer() {
+    const key = api.const.SETUP.cam_anim?.[0];
+
+    if (!key) {
+        return;
+    }
+
+    api.show.busy("loading animation");
+    pollAnimationTransfer(key, 0);
+}
+
+function pollAnimationTransfer(key, tries) {
+    fetch(`${CAM_ANIM_API}?key=${encodeURIComponent(key)}`)
+        .then(res => {
+            if (res.status === 404 && tries < 600) {
+                setTimeout(() => pollAnimationTransfer(key, tries + 1), 1000);
+                return undefined;
+            }
+            if (!res.ok) {
+                throw new Error(`transfer missing: ${res.status}`);
+            }
+            return res.json();
+        })
+        .then(payload => {
+            if (!payload) {
+                return;
+            }
+            if (payload.error) {
+                throw new Error(payload.error);
+            }
+            if (payload.mode !== "CAM") {
+                throw new Error("invalid animation mode");
+            }
+            applyTransferSettings(payload.settings);
+            env.animVer = payload.animVer ?? env.animVer;
+            api.client.send("cam_anim_import", payload, reply => {
+                api.show.busy(false);
+                if (reply?.error) {
+                    api.show.alert(reply.error, 5);
+                    return;
+                }
+                animate();
+            });
+        })
+        .catch(error => {
+            api.show.busy(false);
+            api.show.alert(error.message || String(error), 5);
+        });
+}
+
+function applyTransferSettings(next) {
+    const settings = api.conf.get();
+    const transfer = importTransferSettings(next);
+
+    for (let key of Object.keys(settings)) {
+        delete settings[key];
+    }
+
+    Object.assign(settings, transfer, { mode: "CAM" });
+    if (transfer.bounds) {
+        api.platform.set_bounds(transfer.bounds);
+        Object.assign(settings, transfer, { mode: "CAM" });
+    }
+    api.conf.update_fields();
+    updateStock();
+}
+
+function importTransferSettings(settings) {
+    return {
+        ...settings,
+        bounds: importTransferBox(settings.bounds),
+        origin: importTransferPoint(settings.origin),
+        stock: {
+            ...settings.stock,
+            center: importTransferPoint(settings.stock?.center)
+        }
+    };
+}
+
+function importTransferBox(box) {
+    if (!box) {
+        return box;
+    }
+
+    return new THREE.Box3(
+        importTransferPoint(box.min),
+        importTransferPoint(box.max)
+    );
+}
+
+function importTransferPoint(point) {
+    if (!point) {
+        return point;
+    }
+
+    let out = new THREE.Vector3(point.x, point.y, point.z);
+
+    if (point.a !== undefined) {
+        out.a = point.a;
+    }
+
+    return out;
 }

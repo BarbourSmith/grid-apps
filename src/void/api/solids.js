@@ -67,6 +67,18 @@ function createSolidsApi(getApi) {
         return null;
     }
 
+    function normalizeProfileLoops(loops) {
+        if (!Array.isArray(loops) || !loops.length) return null;
+        const out = loops
+            .filter(loop => Array.isArray(loop) && loop.length >= 3)
+            .map(loop => loop.map(p => ({ x: Number(p?.x || 0), y: Number(p?.y || 0) })));
+        return out.length ? out : null;
+    }
+
+    function profileLoopsFromTarget(profileTarget = {}) {
+        return normalizeProfileLoops(profileTarget?.loops);
+    }
+
     function buildRebuildSnapshot(api) {
         const builtFeatures = api.features.listBuilt();
         const sketchPlanes = {};
@@ -82,7 +94,7 @@ function createSolidsApi(getApi) {
             for (const profileTarget of profiles) {
                 const { sketchId, profileId, key } = resolveProfileTargetRef(profileTarget);
                 if (!sketchId || !profileId) continue;
-                const loops = profileLoopsFromRuntime(api, profileTarget);
+                const loops = profileLoopsFromTarget(profileTarget) || profileLoopsFromRuntime(api, profileTarget);
                 if (!loops?.length) continue;
                 profileLoops[key] = loops;
             }
@@ -102,7 +114,24 @@ function createSolidsApi(getApi) {
                 ? rec.indices
                 : new Uint32Array(rec.indices || []);
             if (!positions.length || !indices.length) continue;
-            map.set(id, { positions, indices });
+            const mesh = { positions, indices };
+            const optionalUint = ['mergeFromVert', 'mergeToVert', 'runIndex', 'runOriginalID', 'faceID'];
+            for (const key of optionalUint) {
+                if (!rec?.[key]?.length) continue;
+                mesh[key] = rec[key] instanceof Uint32Array ? rec[key] : new Uint32Array(rec[key]);
+            }
+            const optionalFloat = ['halfedgeTangent', 'runTransform'];
+            for (const key of optionalFloat) {
+                if (!rec?.[key]?.length) continue;
+                mesh[key] = rec[key] instanceof Float32Array ? rec[key] : new Float32Array(rec[key]);
+            }
+            if (rec?.run_source_solid_ids && typeof rec.run_source_solid_ids === 'object') {
+                mesh.run_source_solid_ids = rec.run_source_solid_ids;
+            }
+            if (Array.isArray(rec?.source_solid_ids)) {
+                mesh.source_solid_ids = rec.source_solid_ids.map(id => String(id || '')).filter(Boolean);
+            }
+            map.set(id, mesh);
         }
         return map;
     }
@@ -155,6 +184,26 @@ function createSolidsApi(getApi) {
 function edgeKey(a, b) {
     return a < b ? `${a}:${b}` : `${b}:${a}`;
 }
+
+    function colorFromId(id, sat = 70, light = 58) {
+        const raw = String(id || '');
+        let hash = 0;
+        for (let i = 0; i < raw.length; i++) {
+            hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+        }
+        const hue = Math.abs(hash % 360);
+        const color = new THREE.Color();
+        color.setHSL(hue / 360, sat / 100, light / 100);
+        return color;
+    }
+
+    function vec3FromRecord(rec) {
+        return new THREE.Vector3(
+            Number(rec?.x || 0),
+            Number(rec?.y || 0),
+            Number(rec?.z || 0)
+        );
+    }
 
     function distancePointToSegmentSquared(p, a, b) {
         const ab = new THREE.Vector3().subVectors(b, a);
@@ -340,6 +389,7 @@ function edgeKey(a, b) {
 
             groups.set(groupId, {
                 id: groupId,
+                tris: tris.slice(),
                 geometry: faceGeom,
                 center,
                 normal,
@@ -617,6 +667,219 @@ function edgeKey(a, b) {
         return `${x}:${y}:${z}`;
     }
 
+    function normalizeRegionIds(ids = [], fallback = []) {
+        const next = new Set();
+        for (const id of ids || []) {
+            const raw = String(id || '').trim();
+            if (raw) next.add(raw);
+        }
+        if (!next.size) {
+            for (const id of fallback || []) {
+                const raw = String(id || '').trim();
+                if (raw) next.add(raw);
+            }
+        }
+        if (!next.size) next.add('region:unknown');
+        return Array.from(next).sort();
+    }
+
+    function regionKey(ids = []) {
+        return normalizeRegionIds(ids).join('|');
+    }
+
+    function runResolver(meshData = null) {
+        const runIndex = meshData?.runIndex;
+        const runOriginalID = meshData?.runOriginalID;
+        if (!runIndex?.length || runIndex.length < 2 || !runOriginalID?.length) {
+            return null;
+        }
+        return (triIndex) => {
+            const tri = Number(triIndex);
+            if (!Number.isFinite(tri) || tri < 0) return null;
+            let lo = 0;
+            let hi = runIndex.length - 2;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                const a = Number(runIndex[mid]);
+                const b = Number(runIndex[mid + 1]);
+                if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+                if (tri < a) {
+                    hi = mid - 1;
+                } else if (tri >= b) {
+                    lo = mid + 1;
+                } else {
+                    return Number(runOriginalID[mid]);
+                }
+            }
+            return null;
+        };
+    }
+
+    function facePatchesFromTriProvenance({
+        faceMeta = null,
+        mesh = null,
+        meshData = null,
+        sourceProfileKeys = [],
+        solidsById = new Map()
+    } = {}) {
+        const geometry = faceMeta?.geometry || null;
+        const indexAttr = geometry?.getIndex?.() || null;
+        const posAttr = geometry?.getAttribute?.('position') || null;
+        const triIndex = indexAttr?.array || null;
+        const triCount = Math.floor(Number(triIndex?.length || 0) / 3);
+        if (!posAttr || !triCount) return [];
+
+        const faceTris = Array.isArray(faceMeta?.tris) ? faceMeta.tris : [];
+        const resolveRun = runResolver(meshData);
+        const runSourceSolidIds = meshData?.run_source_solid_ids || {};
+        const fallbackSolidIds = Array.isArray(meshData?.source_solid_ids) ? meshData.source_solid_ids : [];
+
+        const triRegionIds = new Array(triCount);
+        const triRegionKeys = new Array(triCount);
+
+        for (let ti = 0; ti < triCount; ti++) {
+            const globalTri = Number(faceTris[ti]);
+            const sourceSolidIds = new Set();
+            const runOriginal = resolveRun ? resolveRun(globalTri) : null;
+            if (Number.isFinite(runOriginal)) {
+                const runSources = runSourceSolidIds[String(runOriginal)];
+                if (Array.isArray(runSources) && runSources.length) {
+                    for (const sid of runSources) {
+                        const id = String(sid || '').trim();
+                        if (id) sourceSolidIds.add(id);
+                    }
+                }
+            }
+            if (!sourceSolidIds.size) {
+                for (const sid of fallbackSolidIds) {
+                    const id = String(sid || '').trim();
+                    if (id) sourceSolidIds.add(id);
+                }
+            }
+            const fromSolids = [];
+            for (const sid of sourceSolidIds) {
+                const solid = solidsById.get(String(sid || ''));
+                const keys = Array.isArray(solid?.source?.profile_keys) ? solid.source.profile_keys : [];
+                for (const key of keys) {
+                    const kid = String(key || '').trim();
+                    if (kid) fromSolids.push(kid);
+                }
+            }
+            const ids = normalizeRegionIds(fromSolids, sourceProfileKeys);
+            triRegionIds[ti] = ids;
+            triRegionKeys[ti] = regionKey(ids);
+        }
+
+        const localToWorld = new Map();
+        const worldVertex = (vi) => {
+            const key = Number(vi);
+            if (localToWorld.has(key)) return localToWorld.get(key);
+            const p = new THREE.Vector3().fromBufferAttribute(posAttr, key);
+            const out = mesh?.matrixWorld ? p.applyMatrix4(mesh.matrixWorld) : p;
+            localToWorld.set(key, out);
+            return out;
+        };
+
+        const geomEdgeKey = (a, b) => {
+            const ka = quantPointKey(a);
+            const kb = quantPointKey(b);
+            return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+        };
+
+        const triNeighbors = Array.from({ length: triCount }, () => []);
+        const firstByEdge = new Map();
+        for (let ti = 0; ti < triCount; ti++) {
+            const ia = Number(triIndex[ti * 3]);
+            const ib = Number(triIndex[ti * 3 + 1]);
+            const ic = Number(triIndex[ti * 3 + 2]);
+            const a = worldVertex(ia);
+            const b = worldVertex(ib);
+            const c = worldVertex(ic);
+            const edges = [[a, b], [b, c], [c, a]];
+            for (const [v0, v1] of edges) {
+                const key = geomEdgeKey(v0, v1);
+                if (!firstByEdge.has(key)) {
+                    firstByEdge.set(key, ti);
+                } else {
+                    const other = firstByEdge.get(key);
+                    if (Number.isFinite(other) && other !== ti) {
+                        triNeighbors[ti].push(other);
+                        triNeighbors[other].push(ti);
+                    }
+                }
+            }
+        }
+
+        const visited = new Uint8Array(triCount);
+        const groups = [];
+        for (let seed = 0; seed < triCount; seed++) {
+            if (visited[seed]) continue;
+            const key = triRegionKeys[seed];
+            const queue = [seed];
+            const localTris = [];
+            visited[seed] = 1;
+            while (queue.length) {
+                const cur = queue.pop();
+                localTris.push(cur);
+                const nbs = triNeighbors[cur] || [];
+                for (const nb of nbs) {
+                    if (visited[nb]) continue;
+                    if (triRegionKeys[nb] !== key) continue;
+                    visited[nb] = 1;
+                    queue.push(nb);
+                }
+            }
+            groups.push({
+                key,
+                source_region_ids: triRegionIds[seed].slice(),
+                local_tris: localTris
+            });
+        }
+
+        const out = [];
+        for (const group of groups) {
+            const boundaryEdges = new Map();
+            const triIdsGlobal = [];
+            for (const localTri of group.local_tris) {
+                const i0 = Number(triIndex[localTri * 3]);
+                const i1 = Number(triIndex[localTri * 3 + 1]);
+                const i2 = Number(triIndex[localTri * 3 + 2]);
+                const v0 = worldVertex(i0);
+                const v1 = worldVertex(i1);
+                const v2 = worldVertex(i2);
+                const globalTri = Number(faceTris[localTri]);
+                if (Number.isFinite(globalTri)) triIdsGlobal.push(globalTri);
+                const edges = [[v0, v1], [v1, v2], [v2, v0]];
+                for (const [a, b] of edges) {
+                    const ek = geomEdgeKey(a, b);
+                    const rec = boundaryEdges.get(ek);
+                    if (!rec) {
+                        boundaryEdges.set(ek, { a: a.clone(), b: b.clone(), count: 1 });
+                    } else {
+                        rec.count++;
+                    }
+                }
+            }
+            const loopSegments = [];
+            for (const rec of boundaryEdges.values()) {
+                if (Number(rec?.count) !== 1) continue;
+                const a = rec?.a;
+                const b = rec?.b;
+                if (!a || !b || a.distanceToSquared?.(b) <= 1e-16) continue;
+                loopSegments.push({ a, b });
+            }
+            const loops = buildBoundaryLoopsFromSegments(loopSegments);
+            if (!loops.length) continue;
+            out.push({
+                key: group.key,
+                source_region_ids: group.source_region_ids.slice(),
+                tri_ids: triIdsGlobal,
+                loops
+            });
+        }
+        return out;
+    }
+
     return {
         _rebuildTimer: null,
         _rebuilding: false,
@@ -637,6 +900,14 @@ function edgeKey(a, b) {
             edgeHoverLineWidth: 2.5,
             edgeSelectedLineWidth: 3.25
         },
+        _debugPrefs: {
+            showBoundaries: false,
+            showSegments: false,
+            showSegmentLabels: false,
+            showSurfaceLabels: false,
+            showRegionLabels: false,
+            showPatchLabels: false
+        },
         _faceMats: null,
         _worker: null,
         _workerReady: false,
@@ -650,6 +921,8 @@ function edgeKey(a, b) {
         _loopKeyByGeomBoundaryId: new Map(),
         _frozenChamferEdges: null,
         _frozenEdgeOverlays: null,
+        _debugGroup: null,
+        _debugLabelIds: new Set(),
 
         async init() {
             await ensureKernel();
@@ -723,8 +996,356 @@ function edgeKey(a, b) {
             this._root.name = 'void-solids-runtime';
             this._frozenEdgeOverlays = new THREE.Group();
             this._frozenEdgeOverlays.name = 'void-solids-frozen-edge-overlays';
+            this._debugGroup = new THREE.Group();
+            this._debugGroup.name = 'void-solids-debug-overlays';
             this._root.add(this._frozenEdgeOverlays);
+            this._root.add(this._debugGroup);
             world?.add?.(this._root);
+        },
+
+        onDocumentHydrated(reason = 'document.hydrate', options = {}) {
+            clearTimeout(this._rebuildTimer);
+            this._pendingReason = null;
+            // Invalidate any in-flight rebuild response from prior document state.
+            this._rebuildSeq++;
+            this._meshCache = new Map();
+            this._selectedIds.clear();
+            this._hoveredIds.clear();
+            this._selectedFaceKeys.clear();
+            this._hoveredFaceKey = null;
+            this._selectedEdgeKeys.clear();
+            this._hoveredEdgeKey = null;
+            this._frozenChamferEdges = null;
+            this.syncRuntime();
+            if (options?.rebuild !== false) {
+                this.scheduleRebuild(reason, 0);
+            }
+        },
+
+        getSketchDerivedBoundarySegmentsForSolid(solid) {
+            const api = getApi();
+            if (!solid || String(solid?.source?.feature_type || '') !== 'extrude') return [];
+            const depth = Math.max(0.0001, Math.abs(Number(solid?.extrude?.depth ?? 0)));
+            if (!Number.isFinite(depth) || depth <= 0) return [];
+            const symmetric = solid?.extrude?.symmetric === true;
+            const direction = solid?.extrude?.direction === 'reverse' ? 'reverse' : 'normal';
+            const localZShift = symmetric ? (-depth / 2) : (direction === 'reverse' ? -depth : 0);
+
+            const keys = Array.isArray(solid?.source?.profile_keys) && solid.source.profile_keys.length
+                ? solid.source.profile_keys
+                : (solid?.source?.profile?.region_id ? [solid.source.profile.region_id] : []);
+            if (!keys.length) return [];
+
+            const segments = [];
+            for (const key of keys) {
+                const ref = resolveProfileTargetRef({ region_id: String(key || '') });
+                if (!ref?.sketchId || !ref?.profileId) continue;
+                const sketch = api.features?.findById?.(ref.sketchId);
+                const basis = frameToBasis(sketch?.plane || null);
+                if (!basis) continue;
+                const loops = profileLoopsFromRuntime(api, { region_id: String(key || '') }) || [];
+                for (const loop of loops) {
+                    if (!Array.isArray(loop) || loop.length < 3) continue;
+                    const points = loop.map(p => ({ x: Number(p?.x || 0), y: Number(p?.y || 0) }));
+                    for (let i = 0; i < points.length; i++) {
+                        const a2 = points[i];
+                        const b2 = points[(i + 1) % points.length];
+                        const aStart = basis.origin.clone()
+                            .addScaledVector(basis.xAxis, a2.x)
+                            .addScaledVector(basis.yAxis, a2.y)
+                            .addScaledVector(basis.normal, localZShift);
+                        const bStart = basis.origin.clone()
+                            .addScaledVector(basis.xAxis, b2.x)
+                            .addScaledVector(basis.yAxis, b2.y)
+                            .addScaledVector(basis.normal, localZShift);
+                        const aEnd = aStart.clone().addScaledVector(basis.normal, depth);
+                        const bEnd = bStart.clone().addScaledVector(basis.normal, depth);
+                        segments.push({ a: aStart, b: bStart });
+                        segments.push({ a: aEnd, b: bEnd });
+                    }
+                }
+            }
+            return segments;
+        },
+
+        getSketchDerivedBoundarySegments() {
+            const out = [];
+            for (const solid of this.list() || []) {
+                const segs = this.getSketchDerivedBoundarySegmentsForSolid(solid);
+                if (segs?.length) out.push(...segs);
+            }
+            return out;
+        },
+
+        clearDebugOverlays() {
+            if (this._debugGroup) {
+                while (this._debugGroup.children.length) {
+                    const child = this._debugGroup.children[0];
+                    child.geometry?.dispose?.();
+                    child.material?.dispose?.();
+                    this._debugGroup.remove(child);
+                }
+            }
+            const api = getApi();
+            for (const id of this._debugLabelIds) {
+                api.overlay?.remove?.(id);
+            }
+            this._debugLabelIds.clear();
+        },
+
+        syncDebugOverlays(snapshot = null) {
+            this.clearDebugOverlays();
+            const prefs = this._debugPrefs || {};
+            const enabled = !!(
+                prefs.showBoundaries
+                || prefs.showSegments
+                || prefs.showSegmentLabels
+                || prefs.showSurfaceLabels
+                || prefs.showRegionLabels
+                || prefs.showPatchLabels
+            );
+            if (!enabled || !this._debugGroup) return;
+
+            const api = getApi();
+            const store = snapshot || api?.document?.current?.geometry_store || null;
+            const boundaries = Array.isArray(store?.boundaries) ? store.boundaries : [];
+            const segments = Array.isArray(store?.segments) ? store.segments : [];
+            const surfaces = Array.isArray(store?.surfaces) ? store.surfaces : [];
+            const regions = Array.isArray(store?.regions) ? store.regions : [];
+            const patches = Array.isArray(store?.surface_patches) ? store.surface_patches : [];
+            if (!boundaries.length && !segments.length && !surfaces.length && !regions.length) return;
+
+            const segById = new Map(segments.map(seg => [String(seg?.id || ''), seg]));
+            const boundaryById = new Map(boundaries.map(boundary => [String(boundary?.id || ''), boundary]));
+            const surfaceById = new Map(surfaces.map(surface => [String(surface?.id || ''), surface]));
+            const patchById = new Map(patches.map(patch => [String(patch?.id || ''), patch]));
+            this._root?.updateMatrixWorld?.(true);
+
+            // IMPORTANT: GeometryStore coordinates are scene/world-space.
+            // The solids runtime is attached under `space.WORLD`, which is rotated
+            // by -90deg on X in `space.js`. Any 3D debug geometry parented under
+            // this root MUST convert world -> root local first, or it will appear
+            // rotated/misaligned. Keep labels in world space (overlay expects world).
+            const toRootLocal = (worldVec3) => this._root?.worldToLocal?.(worldVec3.clone()) || worldVec3.clone();
+
+            const addLabel = (id, text, pos3d, color = '#ffd166') => {
+                if (!api.overlay || !pos3d || !text) return;
+                const labelId = `solid-debug:${id}`;
+                const opts = {
+                    pos3d,
+                    text,
+                    color,
+                    fontSize: 11,
+                    className: 'overlay-text'
+                };
+                if (api.overlay.elements?.has?.(labelId)) {
+                    api.overlay.update(labelId, opts);
+                } else {
+                    api.overlay.add(labelId, 'text', opts);
+                }
+                this._debugLabelIds.add(labelId);
+            };
+
+            const hoveredFaceKey = String(this._hoveredFaceKey || '');
+            const hoveredSurfaceId = hoveredFaceKey
+                ? (this._geomSurfaceIdByFaceKey.get(hoveredFaceKey) || `surface:${hoveredFaceKey}`)
+                : null;
+
+            const hoveredEdgeKey = String(this._hoveredEdgeKey || '');
+            let hoveredSegmentId = null;
+            let hoveredBoundaryId = null;
+            if (hoveredEdgeKey) {
+                hoveredSegmentId = this._geomSegmentIdByEdgeKey.get(hoveredEdgeKey) || null;
+                hoveredBoundaryId = this._geomBoundaryIdByLoopKey.get(hoveredEdgeKey) || null;
+                if (!hoveredSegmentId && !hoveredBoundaryId) {
+                    const edge = this.getEdgeByKey(hoveredEdgeKey);
+                    if (edge?.solidId && Number.isFinite(edge?.faceId) && Number.isFinite(edge?.index)) {
+                        const basisKey = `faceedge:${edge.solidId}:${edge.faceId}:${edge.index}`;
+                        hoveredSegmentId = this._geomSegmentIdByEdgeKey.get(basisKey) || null;
+                    }
+                }
+                if (!hoveredBoundaryId && hoveredSegmentId) {
+                    hoveredBoundaryId = String(segById.get(hoveredSegmentId)?.boundary_id || '') || null;
+                }
+            }
+
+            if (prefs.showBoundaries) {
+                const preferredBoundaryIds = new Set();
+                for (const patch of patches) {
+                    const ids = Array.isArray(patch?.boundary_ids) ? patch.boundary_ids : [];
+                    for (const id of ids) {
+                        const bid = String(id || '').trim();
+                        if (bid) preferredBoundaryIds.add(bid);
+                    }
+                }
+                let toDraw = preferredBoundaryIds.size
+                    ? boundaries.filter(boundary => preferredBoundaryIds.has(String(boundary?.id || '')))
+                    : boundaries;
+                if (!toDraw.length && boundaries.length) {
+                    toDraw = boundaries;
+                }
+                for (const boundary of toDraw) {
+                    const segmentIds = Array.isArray(boundary?.segment_ids) ? boundary.segment_ids : [];
+                    if (!segmentIds.length) continue;
+                    const positions = [];
+                    for (const segmentId of segmentIds) {
+                        const seg = segById.get(String(segmentId || ''));
+                        if (!seg?.a || !seg?.b) continue;
+                        const a = toRootLocal(vec3FromRecord(seg.a));
+                        const b = toRootLocal(vec3FromRecord(seg.b));
+                        positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+                    }
+                    if (!positions.length) continue;
+                    const color = colorFromId(boundary?.id, 62, 56);
+                    const geom = new THREE.BufferGeometry();
+                    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    const mat = new THREE.LineBasicMaterial({
+                        color,
+                        transparent: true,
+                        opacity: 0.9,
+                        depthTest: false,
+                        depthWrite: false
+                    });
+                    const lines = new THREE.LineSegments(geom, mat);
+                    lines.renderOrder = 95;
+                    this._debugGroup.add(lines);
+                }
+            }
+
+            if (prefs.showSegments) {
+                for (const seg of segments) {
+                    if (!seg?.a || !seg?.b) continue;
+                    const a = toRootLocal(vec3FromRecord(seg.a));
+                    const b = toRootLocal(vec3FromRecord(seg.b));
+                    const geom = new THREE.BufferGeometry();
+                    geom.setAttribute('position', new THREE.Float32BufferAttribute([
+                        a.x, a.y, a.z,
+                        b.x, b.y, b.z
+                    ], 3));
+                    const mat = new THREE.LineBasicMaterial({
+                        color: 0x66d9ef,
+                        transparent: true,
+                        opacity: 0.95,
+                        depthTest: false,
+                        depthWrite: false
+                    });
+                    const line = new THREE.LineSegments(geom, mat);
+                    line.renderOrder = 96;
+                    this._debugGroup.add(line);
+                }
+            }
+
+            if (prefs.showSegmentLabels) {
+                const shown = [];
+                if (hoveredBoundaryId) {
+                    const boundary = boundaryById.get(String(hoveredBoundaryId || ''));
+                    const ids = Array.isArray(boundary?.segment_ids) ? boundary.segment_ids : [];
+                    for (const sid of ids) {
+                        const seg = segById.get(String(sid || ''));
+                        if (seg) shown.push(seg);
+                    }
+                } else if (hoveredSegmentId) {
+                    const seg = segById.get(String(hoveredSegmentId || ''));
+                    if (seg) shown.push(seg);
+                }
+                for (const seg of shown) {
+                    const mid = seg?.mid || null;
+                    if (!mid) continue;
+                    const text = String(seg?.id || 'segment');
+                    addLabel(`segment:${text}`, text, vec3FromRecord(mid), '#9ad9ff');
+                }
+            }
+
+            if (prefs.showSurfaceLabels) {
+                if (hoveredSurfaceId) {
+                    const surface = surfaceById.get(String(hoveredSurfaceId || ''));
+                    const center = surface?.center || null;
+                    if (center) {
+                        const text = String(surface?.id || 'surface');
+                        addLabel(`surface:${text}`, text, vec3FromRecord(center), '#ffcf7a');
+                    }
+                }
+            }
+
+            if (prefs.showRegionLabels) {
+                for (const region of regions) {
+                    if (hoveredSurfaceId && String(region?.surface_id || '') !== String(hoveredSurfaceId)) {
+                        continue;
+                    }
+                    const boundaryIds = Array.isArray(region?.boundary_ids) ? region.boundary_ids : [];
+                    const boundary = boundaryById.get(String(boundaryIds[0] || ''));
+                    const segIds = Array.isArray(boundary?.segment_ids) ? boundary.segment_ids : [];
+                    let anchor = null;
+                    if (segIds.length) {
+                        const sum = new THREE.Vector3();
+                        let count = 0;
+                        for (const sid of segIds) {
+                            const seg = segById.get(String(sid || ''));
+                            if (!seg?.mid) continue;
+                            sum.add(vec3FromRecord(seg.mid));
+                            count++;
+                        }
+                        if (count) {
+                            anchor = sum.multiplyScalar(1 / count);
+                        }
+                    }
+                    if (!anchor && region?.surface_id) {
+                        const surface = surfaceById.get(String(region.surface_id));
+                        if (surface?.center) anchor = vec3FromRecord(surface.center);
+                    }
+                    if (!anchor) continue;
+                    const text = String(region?.id || 'region');
+                    addLabel(`region:${text}`, text, anchor, '#ff9dc2');
+                }
+            }
+
+            if (prefs.showPatchLabels) {
+                const shown = [];
+                if (hoveredSurfaceId) {
+                    for (const patch of patches) {
+                        if (String(patch?.surface_id || '') === String(hoveredSurfaceId)) {
+                            shown.push(patch);
+                        }
+                    }
+                } else if (hoveredSurfaceId === null && hoveredEdgeKey) {
+                    // edge hover only path fallback: show matching patch by boundary id
+                    if (hoveredBoundaryId) {
+                        for (const patch of patches) {
+                            const bids = Array.isArray(patch?.boundary_ids) ? patch.boundary_ids : [];
+                            if (bids.includes(hoveredBoundaryId)) shown.push(patch);
+                        }
+                    }
+                }
+                for (const patch of shown) {
+                    const regionId = String(patch?.source_region_id || '');
+                    const boundaryIds = Array.isArray(patch?.boundary_ids) ? patch.boundary_ids : [];
+                    const boundary = boundaryById.get(String(boundaryIds[0] || ''));
+                    const segIds = Array.isArray(boundary?.segment_ids) ? boundary.segment_ids : [];
+                    let anchor = null;
+                    if (segIds.length) {
+                        const sum = new THREE.Vector3();
+                        let count = 0;
+                        for (const sid of segIds) {
+                            const seg = segById.get(String(sid || ''));
+                            if (!seg?.mid) continue;
+                            sum.add(vec3FromRecord(seg.mid));
+                            count++;
+                        }
+                        if (count) anchor = sum.multiplyScalar(1 / count);
+                    }
+                    if (!anchor && patch?.surface_id) {
+                        const surface = surfaceById.get(String(patch.surface_id));
+                        if (surface?.center) anchor = vec3FromRecord(surface.center);
+                    }
+                    if (!anchor) continue;
+                    const text = regionId
+                        ? `${String(patch?.id || 'patch')} -> ${regionId}`
+                        : String(patch?.id || 'patch');
+                    addLabel(`patch:${patch?.id || text}`, text, anchor, '#a6f57a');
+                }
+            }
+
+            api.overlay?.updateAll?.();
         },
 
         list() {
@@ -735,6 +1356,7 @@ function edgeKey(a, b) {
         },
 
         buildGeometryStoreSnapshot() {
+            this._root?.updateMatrixWorld?.(true);
             this._geomSurfaceIdByFaceKey = new Map();
             this._geomSegmentIdByEdgeKey = new Map();
             this._geomBoundaryIdByLoopKey = new Map();
@@ -745,11 +1367,15 @@ function edgeKey(a, b) {
             const segments = [];
             const points = [];
             const regions = [];
+            const surface_patches = [];
             const pointIdByKey = new Map();
             const topology = {
                 surface_to_segments: {},
-                segment_to_surfaces: {}
+                segment_to_surfaces: {},
+                patch_to_tris: {},
+                tri_to_patch: {}
             };
+            const solidsById = new Map((this.list() || []).map(item => [String(item?.id || ''), item]));
 
             const getPointId = (p, role = 'boundary-vertex') => {
                 const key = quantPointKey(p);
@@ -769,13 +1395,28 @@ function edgeKey(a, b) {
             };
 
             for (const [solidId, view] of this._meshViews.entries()) {
+                const solid = solidsById.get(String(solidId)) || null;
+                const sourceProfileKeys = Array.isArray(solid?.source?.profile_keys)
+                    ? solid.source.profile_keys.map(key => String(key || '')).filter(Boolean)
+                    : [];
+                const primarySourceRegion = sourceProfileKeys.length === 1 ? sourceProfileKeys[0] : null;
                 if (!view?.faceGroups?.size) continue;
                 for (const [faceId, meta] of view.faceGroups.entries()) {
                     const faceKey = `${solidId}:${faceId}`;
                     const surfaceId = `surface:${faceKey}`;
                     const loops = this.getFaceBoundaryLoops(faceKey) || [];
-                    const normal = meta?.normal || {};
-                    const center = meta?.center || {};
+                    const mesh = view?.mesh || null;
+                    const normalLocal = meta?.normal || new THREE.Vector3(0, 0, 1);
+                    const centerLocal = meta?.center || new THREE.Vector3();
+                    // GeometryStore should store scene/world-space coordinates.
+                    // Face loops already do this via `getFaceBoundaryLoops()`.
+                    // Keep surface center/normal in the same space for consistency.
+                    const normal = normalLocal?.clone?.() && mesh?.matrixWorld
+                        ? normalLocal.clone().transformDirection(mesh.matrixWorld).normalize()
+                        : normalLocal;
+                    const center = centerLocal?.clone?.() && mesh?.matrixWorld
+                        ? centerLocal.clone().applyMatrix4(mesh.matrixWorld)
+                        : centerLocal;
                     surfaces.push({
                         id: surfaceId,
                         solid_id: solidId,
@@ -797,6 +1438,31 @@ function edgeKey(a, b) {
                         }
                     });
                     this._geomSurfaceIdByFaceKey.set(faceKey, surfaceId);
+
+                    const meshData = this._meshCache?.get?.(String(solidId)) || null;
+                    const facePatches = facePatchesFromTriProvenance({
+                        faceMeta: meta,
+                        mesh,
+                        meshData,
+                        sourceProfileKeys,
+                        solidsById
+                    });
+                    const faceSourceRegionSet = new Set();
+                    for (const patch of facePatches) {
+                        for (const id of patch?.source_region_ids || []) {
+                            const rid = String(id || '').trim();
+                            if (rid) faceSourceRegionSet.add(rid);
+                        }
+                    }
+                    if (!faceSourceRegionSet.size) {
+                        for (const rid of normalizeRegionIds(sourceProfileKeys)) {
+                            faceSourceRegionSet.add(rid);
+                        }
+                    }
+                    const faceSourceRegionIds = Array.from(faceSourceRegionSet);
+                    const facePrimarySourceRegion = faceSourceRegionIds.length === 1
+                        ? faceSourceRegionIds[0]
+                        : (primarySourceRegion || null);
 
                     const surfaceSegmentIds = [];
                     for (let li = 0; li < loops.length; li++) {
@@ -869,6 +1535,125 @@ function edgeKey(a, b) {
                             }
                         });
                     }
+
+                    let emittedPatchCount = 0;
+                    if (facePatches.length) {
+                        for (let pi = 0; pi < facePatches.length; pi++) {
+                            const patch = facePatches[pi];
+                            const patchId = `surface-patch:${faceKey}:${pi}`;
+                            const patchBoundaryIds = [];
+                            const sourceRegionIds = normalizeRegionIds(patch?.source_region_ids, faceSourceRegionIds);
+                            const patchPrimarySourceRegion = sourceRegionIds.length === 1
+                                ? sourceRegionIds[0]
+                                : facePrimarySourceRegion;
+                            const patchLoops = Array.isArray(patch?.loops) ? patch.loops : [];
+                            for (let pli = 0; pli < patchLoops.length; pli++) {
+                                const loop = patchLoops[pli];
+                                const points = Array.isArray(loop?.points) ? loop.points : [];
+                                if (points.length < 2) continue;
+                                const boundaryId = `boundary:patch:${faceKey}:${pi}:${pli}`;
+                                const boundarySegmentIds = [];
+                                const closed = !!loop?.closed;
+                                const stepCount = closed ? points.length : (points.length - 1);
+                                for (let si = 0; si < stepCount; si++) {
+                                    const a = points[si];
+                                    const b = points[(si + 1) % points.length];
+                                    if (!a || !b || a.distanceToSquared?.(b) <= 1e-16) continue;
+                                    const segmentId = `segment:patch:${faceKey}:${pi}:${pli}:${si}`;
+                                    const aId = getPointId(a, 'patch-boundary-vertex');
+                                    const bId = getPointId(b, 'patch-boundary-vertex');
+                                    const mid = a.clone().add(b).multiplyScalar(0.5);
+                                    const midId = getPointId(mid, 'patch-boundary-midpoint');
+                                    segments.push({
+                                        id: segmentId,
+                                        boundary_id: boundaryId,
+                                        kind: 'line',
+                                        a: { x: Number(a.x || 0), y: Number(a.y || 0), z: Number(a.z || 0) },
+                                        b: { x: Number(b.x || 0), y: Number(b.y || 0), z: Number(b.z || 0) },
+                                        mid: { x: Number(mid.x || 0), y: Number(mid.y || 0), z: Number(mid.z || 0) },
+                                        point_ids: [aId, bId, midId],
+                                        source: {
+                                            type: 'surface-patch-boundary',
+                                            patch_id: patchId,
+                                            face_key: faceKey
+                                        }
+                                    });
+                                    boundarySegmentIds.push(segmentId);
+                                    surfaceSegmentIds.push(segmentId);
+                                    topology.segment_to_surfaces[segmentId] = [surfaceId];
+                                }
+                                if (!boundarySegmentIds.length) continue;
+                                boundaries.push({
+                                    id: boundaryId,
+                                    surface_id: surfaceId,
+                                    segment_ids: boundarySegmentIds,
+                                    closed,
+                                    source: {
+                                        type: 'surface-patch-loop',
+                                        patch_id: patchId,
+                                        face_key: faceKey,
+                                        loop_index: pli
+                                    }
+                                });
+                                patchBoundaryIds.push(boundaryId);
+                            }
+                            if (!patchBoundaryIds.length) continue;
+                            surface_patches.push({
+                                id: patchId,
+                                surface_id: surfaceId,
+                                boundary_ids: patchBoundaryIds,
+                                source_region_id: patchPrimarySourceRegion,
+                                source_region_ids: sourceRegionIds,
+                                solid_id: solidId,
+                                face_id: faceId,
+                                status: facePatches.length > 1 ? 'partitioned' : 'single-source',
+                                source: {
+                                    type: 'tri-provenance',
+                                    face_key: faceKey,
+                                    feature_id: solid?.source?.feature_id || null
+                                }
+                            });
+                            emittedPatchCount++;
+                            const patchTriIds = Array.isArray(patch?.tri_ids) ? patch.tri_ids : [];
+                            topology.patch_to_tris[patchId] = patchTriIds.slice();
+                            for (const triId of patchTriIds) {
+                                if (!Number.isFinite(Number(triId))) continue;
+                                topology.tri_to_patch[`${solidId}:${Number(triId)}`] = patchId;
+                            }
+                            regions.push({
+                                id: `region:patch:${faceKey}:${pi}`,
+                                surface_id: surfaceId,
+                                boundary_ids: patchBoundaryIds.slice(),
+                                source: {
+                                    type: 'surface-patch-region',
+                                    patch_id: patchId,
+                                    face_key: faceKey
+                                }
+                            });
+                        }
+                    }
+                    if (!emittedPatchCount) {
+                        for (let li = 0; li < loops.length; li++) {
+                            const boundaryId = `boundary:${faceKey}:${li}`;
+                            const patchId = `surface-patch:${faceKey}:${li}`;
+                            surface_patches.push({
+                                id: patchId,
+                                surface_id: surfaceId,
+                                boundary_ids: [boundaryId],
+                                source_region_id: facePrimarySourceRegion,
+                                source_region_ids: faceSourceRegionIds.slice(),
+                                solid_id: solidId,
+                                face_id: faceId,
+                                status: 'seed',
+                                source: {
+                                    type: 'solid-face-loop',
+                                    face_key: faceKey,
+                                    loop_index: li,
+                                    feature_id: solid?.source?.feature_id || null
+                                }
+                            });
+                        }
+                    }
                     topology.surface_to_segments[surfaceId] = surfaceSegmentIds;
                 }
             }
@@ -878,6 +1663,7 @@ function edgeKey(a, b) {
                 segments,
                 points,
                 regions,
+                surface_patches,
                 topology,
                 meta: {
                     feature_count: Number(getApi()?.features?.list?.()?.length || 0)
@@ -989,7 +1775,9 @@ function edgeKey(a, b) {
                     const mesh = new THREE.Mesh(built.render, this._material.clone());
                     mesh.userData.solidId = id;
                     mesh.userData.solid = true;
-                    const edgesGeom = new THREE.EdgesGeometry(built.render, SOLID_CREASE_ANGLE_DEG);
+                    // Derive visible hard edges from indexed manifold topology, not the
+                    // creased render geometry, to avoid triangle/split seam artifacts.
+                    const edgesGeom = new THREE.EdgesGeometry(built.indexed, SOLID_CREASE_ANGLE_DEG);
                     const edges = new THREE.LineSegments(edgesGeom, this._edgeMaterial.clone());
                     edges.userData.solidId = id;
                     edges.userData.solidEdge = true;
@@ -1040,7 +1828,7 @@ function edgeKey(a, b) {
                     const built = buildSolidGeometry(meshData);
                     view.mesh.geometry = built.render;
                     view.indexedGeometry = built.indexed;
-                    view.edges.geometry = new THREE.EdgesGeometry(built.render, SOLID_CREASE_ANGLE_DEG);
+                    view.edges.geometry = new THREE.EdgesGeometry(built.indexed, SOLID_CREASE_ANGLE_DEG);
                 }
                 // Build selectable face regions from the same geometry used for ray hits.
                 // This keeps surface-region hover/selection aligned with rendered shading.
@@ -1080,6 +1868,9 @@ function edgeKey(a, b) {
             if (doc) {
                 const snapshot = this.buildGeometryStoreSnapshot();
                 api.geometryStore?.applySolidSnapshot?.(doc, snapshot);
+                this.syncDebugOverlays(snapshot);
+            } else {
+                this.syncDebugOverlays(null);
             }
         },
 
@@ -1537,8 +2328,9 @@ function edgeKey(a, b) {
             };
         },
 
-        resolveEdgeFromSource(source = {}) {
+        resolveEdgeFromSource(source = {}, options = {}) {
             if (source?.type !== 'solid-edge') return null;
+            const allowGlobalFallback = options?.allowGlobalFallback !== false;
             const targetSolidId = String(source?.solid_id || '');
             const targetFeatureId = String(source?.solid_feature_id || '');
             const sourceFaceId = Number(source?.face_id);
@@ -1610,11 +2402,13 @@ function edgeKey(a, b) {
                 }
                 if (byFeature.length) searchSets.push(byFeature);
             }
-            const all = [];
-            for (const solid of solids) {
-                if (solid?.id) all.push(String(solid.id));
+            if (allowGlobalFallback) {
+                const all = [];
+                for (const solid of solids) {
+                    if (solid?.id) all.push(String(solid.id));
+                }
+                if (all.length) searchSets.push(all);
             }
-            if (all.length) searchSets.push(all);
             let best = null;
             let bestScore = Infinity;
             const scanSet = (wanted = []) => {
@@ -1648,7 +2442,7 @@ function edgeKey(a, b) {
             return best;
         },
 
-        resolvePointFromSource(source = {}) {
+        resolvePointFromSource(source = {}, options = {}) {
             if (source?.type !== 'solid-edge') return null;
             const targetSolidId = String(source?.solid_id || '');
             const sourceFaceId = Number(source?.face_id);
@@ -1662,7 +2456,7 @@ function edgeKey(a, b) {
                     if (world) return world;
                 }
             }
-            const seg = this.resolveEdgeFromSource(source);
+            const seg = this.resolveEdgeFromSource(source, options);
             if (!seg) return null;
             const kind = source?.point_kind || 'mid';
             if (kind === 'a') return seg.aWorld;
@@ -1984,6 +2778,9 @@ function edgeKey(a, b) {
             if (next === this._hoveredFaceKey) return;
             this._hoveredFaceKey = next;
             this.syncFaceOverlays();
+            if (this._debugPrefs?.showSurfaceLabels || this._debugPrefs?.showRegionLabels) {
+                this.syncDebugOverlays();
+            }
         },
 
         setSelectedFaces(keys = []) {
@@ -2015,6 +2812,9 @@ function edgeKey(a, b) {
             if (next === this._hoveredEdgeKey) return;
             this._hoveredEdgeKey = next;
             this.syncEdgeOverlays();
+            if (this._debugPrefs?.showSegmentLabels) {
+                this.syncDebugOverlays();
+            }
         },
 
         setSelectedEdges(keys = []) {
@@ -2055,6 +2855,25 @@ function edgeKey(a, b) {
             this._renderPrefs = merged;
             this.syncEdgeOverlays();
             return this.getRenderPreferences();
+        },
+
+        getDebugPreferences() {
+            return { ...(this._debugPrefs || {}) };
+        },
+
+        setDebugPreferences(next = {}) {
+            const curr = this._debugPrefs || {};
+            const merged = {
+                showBoundaries: next.showBoundaries !== undefined ? next.showBoundaries === true : !!curr.showBoundaries,
+                showSegments: next.showSegments !== undefined ? next.showSegments === true : !!curr.showSegments,
+                showSegmentLabels: next.showSegmentLabels !== undefined ? next.showSegmentLabels === true : !!curr.showSegmentLabels,
+                showSurfaceLabels: next.showSurfaceLabels !== undefined ? next.showSurfaceLabels === true : !!curr.showSurfaceLabels,
+                showRegionLabels: next.showRegionLabels !== undefined ? next.showRegionLabels === true : !!curr.showRegionLabels,
+                showPatchLabels: next.showPatchLabels !== undefined ? next.showPatchLabels === true : !!curr.showPatchLabels
+            };
+            this._debugPrefs = merged;
+            this.syncDebugOverlays();
+            return this.getDebugPreferences();
         },
 
         getSketchTargetForFaceKey(key) {
@@ -2100,7 +2919,7 @@ function edgeKey(a, b) {
                     Number(preferredFrame.x_axis.y || 0),
                     Number(preferredFrame.x_axis.z || 0)
                 )
-                : new THREE.Vector3(1, 0, 0);
+                : (meta?.xAxis?.clone?.() || new THREE.Vector3(1, 0, 0));
             if (xAxis.lengthSq() <= 1e-12) {
                 xAxis.set(1, 0, 0);
             }
@@ -2151,9 +2970,10 @@ function edgeKey(a, b) {
             };
         },
 
-        resolveSketchFrameForSource(source, preferredFrame = null) {
+        resolveSketchFrameForSource(source, preferredFrame = null, options = {}) {
             const sourceType = String(source?.type || '');
             if (sourceType !== 'solid-face' && sourceType !== 'face') return null;
+            const allowGlobalFallback = options?.allowGlobalFallback !== false;
             const solidId = String(source?.solid_id || '');
             const preferredSolidId = solidId || null;
             const view = solidId ? this._meshViews.get(solidId) : null;
@@ -2265,7 +3085,7 @@ function edgeKey(a, b) {
                         evalView(c.sid, c.meshView, 0.06);
                     }
                 }
-                if (!best) {
+                if (!best && allowGlobalFallback) {
                     for (const c of candidates) {
                         const bias = preferredSolidId && c.sid === preferredSolidId ? 0.02 : 0;
                         evalView(c.sid, c.meshView, bias);
@@ -2280,12 +3100,14 @@ function edgeKey(a, b) {
             };
         },
 
-        refreshSketchFaceAttachments() {
+        refreshSketchFaceAttachments(options = {}) {
             const api = getApi();
             const features = api.features.list() || [];
+            const eligible = options?.eligibleSketchIds instanceof Set ? options.eligibleSketchIds : null;
             let changed = false;
             for (const feature of features) {
                 if (feature?.type !== 'sketch') continue;
+                if (eligible && !eligible.has(String(feature?.id || ''))) continue;
                 const target = feature?.target || {};
                 let source = target?.source || null;
                 let resolved = null;
@@ -2339,7 +3161,11 @@ function edgeKey(a, b) {
                 }
                 if (source?.type !== 'solid-face' && source?.type !== 'face') continue;
                 if (!resolved) {
-                    resolved = this.resolveSketchFrameForSource(source, feature.plane || null);
+                    // Auto-refresh path must not drift to unrelated/newer solids when
+                    // the original source solid/face no longer exists.
+                    resolved = this.resolveSketchFrameForSource(source, feature.plane || null, {
+                        allowGlobalFallback: false
+                    });
                 }
                 if (!resolved?.frame) continue;
                 const frame = this.applyOffsetToFrame(resolved.frame, Number(feature?.target?.offset || 0));
@@ -2576,14 +3402,60 @@ function edgeKey(a, b) {
                     }
                     this._meshCache = result?.meshCache || new Map();
                     this.syncRuntime();
+                    const allFeatures = api.features.list() || [];
+                    const featureIndexById = new Map(allFeatures.map((f, i) => [String(f?.id || ''), i]));
+                    const eligibleSketchIds = new Set();
+                    const activeEditFeatureId = String(api.document?.getAtomicEditFeatureId?.() || '');
+                    const activeEditFeature = activeEditFeatureId
+                        ? (allFeatures.find(f => String(f?.id || '') === activeEditFeatureId) || null)
+                        : null;
+                    const activeSketchEditId = activeEditFeature?.type === 'sketch'
+                        ? String(activeEditFeature.id || '')
+                        : '';
+                    const getFeatureIndex = (fid) => {
+                        const key = String(fid || '');
+                        if (!key) return -1;
+                        const idx = featureIndexById.get(key);
+                        return Number.isFinite(idx) ? Number(idx) : -1;
+                    };
+                    const hasFutureSourceDependency = (sketchFeature) => {
+                        const sketchIndex = getFeatureIndex(sketchFeature?.id);
+                        if (sketchIndex < 0) return false;
+                        const sourceFeatureIds = new Set();
+                        const targetSource = sketchFeature?.target?.source || null;
+                        const targetSourceFeatureId = String(targetSource?.solid_feature_id || '');
+                        if (targetSourceFeatureId) sourceFeatureIds.add(targetSourceFeatureId);
+                        const entities = Array.isArray(sketchFeature?.entities) ? sketchFeature.entities : [];
+                        for (const entity of entities) {
+                            if (!entity?.derived) continue;
+                            const src = entity?.source || null;
+                            const srcFeatureId = String(src?.solid_feature_id || '');
+                            if (srcFeatureId) sourceFeatureIds.add(srcFeatureId);
+                        }
+                        for (const srcId of sourceFeatureIds) {
+                            const srcIndex = getFeatureIndex(srcId);
+                            if (srcIndex > sketchIndex) return true;
+                        }
+                        return false;
+                    };
+                    // Guardrail: do not auto-mutate historical sketches during solids
+                    // rebuilds triggered by other features. Only the actively edited
+                    // sketch may auto-refresh derived refs / face attachments.
+                    if (activeSketchEditId) {
+                        const feature = allFeatures.find(f => String(f?.id || '') === activeSketchEditId) || null;
+                        if (feature?.type === 'sketch' && !hasFutureSourceDependency(feature)) {
+                            eligibleSketchIds.add(activeSketchEditId);
+                        }
+                    }
                     let derivedChanged = false;
-                    for (const feature of (api.features.list() || [])) {
+                    for (const feature of allFeatures) {
                         if (feature?.type !== 'sketch') continue;
+                        if (!eligibleSketchIds.has(String(feature?.id || ''))) continue;
                         if (api.interact?.refreshDerivedSketchGeometry?.(feature)) {
                             derivedChanged = true;
                         }
                     }
-                    const rebound = this.refreshSketchFaceAttachments();
+                    const rebound = this.refreshSketchFaceAttachments({ eligibleSketchIds });
                     if (rebound || derivedChanged) {
                         if (persist) {
                             await api.document.save({

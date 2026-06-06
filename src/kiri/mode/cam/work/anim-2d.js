@@ -15,21 +15,21 @@ export function init(worker) {
     const { dispatch } = worker;
 
     dispatch.animate_setup = function(data, send) {
-        settings = data.settings;
+        const { print } = worker.current;
+        settings = data.fromPrint && print?.settings ? print.settings : data.settings;
 
         const { process } = settings;
-        const { print } = worker.current;
         const density = parseInt(settings.controller.animesh) * 1000;
 
         pathIndex = 0;
-        path = print.output.flat();
+        path = print.output.flat().map(clonePathRecord);
         tools = settings.tools;
         stock = settings.stock;
         rez = 1/Math.sqrt(density/(stock.x * stock.y));
 
         // destructure arcs into path points
         path = path.map(o =>
-            o.arcPoints ? [ ...o.arcPoints.map(point => ({ ...o, point })), o ] : [ o ]
+            o.arcPoints ? [ ...o.arcPoints.map(point => ({ ...o, point: clonePoint(point) })), o ] : [ o ]
         ).flat();
 
         const step = rez;
@@ -75,7 +75,21 @@ export function init(worker) {
         if (animating) {
             animateClear = true;
         }
+        send.done();
     };
+}
+
+function clonePathRecord(rec) {
+    return rec ? {
+        ...rec,
+        point: clonePoint(rec.point),
+        center: clonePoint(rec.center),
+        arcPoints: rec.arcPoints?.map(clonePoint)
+    } : rec;
+}
+
+function clonePoint(point) {
+    return point ? { ...point } : point;
 }
 
 function createGrid(stepsX, stepsY, size, step, stock) {
@@ -121,6 +135,14 @@ function createGrid(stepsX, stepsY, size, step, stock) {
     }
 
     return { pos, ind, sab };
+}
+
+function getToolID(tool) {
+    return tool?.getID ? tool.getID() : tool;
+}
+
+function hasToolID(toolID) {
+    return toolID !== undefined && toolID !== null;
 }
 
 let animateClear = false;
@@ -175,8 +197,9 @@ function renderPath(send) {
     }
     pathIndex++;
 
-    const firstTool = !tool && next.tool;
-    const toolChange = !firstTool && (tool.getID() !== next.tool.getID());
+    const nextToolID = getToolID(next.tool);
+    const firstTool = !tool && hasToolID(nextToolID);
+    const toolChange = !firstTool && (tool.getID() !== nextToolID);
     if (firstTool || toolChange) {
         // on real tool change, go to safe Z first
         if (tool && last.point) {
@@ -187,7 +210,7 @@ function renderPath(send) {
             };
             send.data({ mesh_move: { toolID, pos }});
         }
-        updateTool(next.tool, send);
+        updateTool(nextToolID, send);
     }
 
     const id = toolID;
@@ -285,11 +308,11 @@ function deformMesh(pos, send) {
     }
 }
 
-function updateTool(toolobj, send) {
+function updateTool(toolid, send) {
     if (tool) {
         send.data({ mesh_del: toolID });
     }
-    tool = new Tool(settings, toolobj.getID());
+    tool = new Tool(settings, toolid);
     tool.generateProfile(rez);
     const flen = tool.fluteLength() || 15;
     const slen = tool.shaftLength() || 15;

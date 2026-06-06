@@ -35,14 +35,14 @@ export function init(worker) {
     const { dispatch, minions } = worker;
 
     dispatch.animate_setup2 = function (data, send) {
-        settings = data.settings;
+        const { print } = worker.current;
+        settings = data.fromPrint && print?.settings ? print.settings : data.settings;
 
         const { controller, process } = settings;
-        const { print } = worker.current;
         const isIndexed = process.camStockIndexed;
 
         pathIndex = 0;
-        path = print.output.flat();
+        path = print.output.flat().map(clonePathRecord);
         tools = settings.tools;
         stock = settings.stock;
         tool = null;
@@ -90,7 +90,29 @@ export function init(worker) {
         if (animating) {
             animateClear = true;
         }
+        send.done();
     };
+}
+
+function clonePathRecord(rec) {
+    return rec ? {
+        ...rec,
+        point: clonePoint(rec.point),
+        center: clonePoint(rec.center),
+        arcPoints: rec.arcPoints?.map(clonePoint)
+    } : rec;
+}
+
+function clonePoint(point) {
+    return point ? { ...point } : point;
+}
+
+function getToolID(tool) {
+    return tool?.getID ? tool.getID() : tool;
+}
+
+function hasToolID(toolID) {
+    return toolID !== undefined && toolID !== null;
 }
 
 function renderPath(send) {
@@ -127,7 +149,9 @@ function renderPath(send) {
     }
     pathIndex++;
 
-    if (next.tool && (!tool || tool.getID() !== next.tool.getID())) {
+    const nextToolID = getToolID(next.tool);
+
+    if (hasToolID(nextToolID) && (!tool || tool.getID() !== nextToolID)) {
         // on real tool change, go to safe Z first
         if (tool && last.point) {
             let pos = last.point = {
@@ -138,7 +162,7 @@ function renderPath(send) {
             toolMove(pos);
             send.data(toolUpdateMsg);
         }
-        toolUpdate(next.tool.getID(), send);
+        toolUpdate(nextToolID, send);
     }
 
     const id = toolID;

@@ -23,6 +23,7 @@ const clib = self.ClipperLib;
 const ctyp = clib.ClipType;
 const ptyp = clib.PolyType;
 const cfil = clib.PolyFillType;
+const SharedOrArrayBuffer = globalThis.SharedArrayBuffer || ArrayBuffer;
 
 let cache = self.cache = {};
 let name = "unknown";
@@ -154,14 +155,11 @@ const funcs = self.minion = {
 
     sliceZ(data, seq) {
         debug('minion.sliceZ', { data, seq });
-        let { z, points, options } = data;
-        let i = 0, p = 0, realp = new Array(points.length / 3);
-        while (i < points.length) {
-            realp[p++] = newPoint(points[i++], points[i++], points[i++]).round(3);
-        }
+        let { z, options } = data;
+        let { points } = cache;
         let state = { zero: [] };
         let output = [];
-        sliceZ(z, realp, {
+        sliceZ(z, points, {
             ...options,
             each(out) { output.push(out) }
         }).then(() => {
@@ -173,9 +171,17 @@ const funcs = self.minion = {
         });
     },
 
+    setPoints(data, seq) {
+        let { points } = data;
+        let i = 0, p = 0, realp = new Array(points.length / 3);
+        while (i < points.length) {
+            realp[p++] = newPoint(points[i++], points[i++], points[i++]).round(3);
+        }
+        cache.points = realp;
+    },
+
     putCache(msg) {
         const { key, data } = msg;
-        // log({ minion_putCache: key, data });
         if (data) {
             cache[key] = data;
         } else {
@@ -305,7 +311,7 @@ const funcs = self.minion = {
                 }
 
                 const points = codec.encodePointArray(lines.map(l => [ l.p1, l.p2 ]).flat());
-                const shared = new Float32Array(new SharedArrayBuffer(points.length * 4));
+                const shared = new Float32Array(new SharedOrArrayBuffer(points.length * 4));
                 shared.set(points);
 
                 return {

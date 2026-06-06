@@ -4,7 +4,6 @@ import { $, h } from '../../../moto/webui.js';
 import { api } from '../api.js';
 import { conf } from './defaults.js';
 import { codec } from '../../core/codec.js';
-import { consts } from '../consts.js';
 import { space } from '../../../moto/space.js';
 import { local } from '../../../data/local.js';
 import { newWidget } from '../widget.js';
@@ -172,9 +171,6 @@ function updateSettings(opt = {}) {
             same = false;
         }
     }
-
-    $('mode-device').innerText = device.deviceName;
-    $('mode-profile').innerText = `${cproc[mode]}${same ? '' : ' *'}`;
 }
 
 function updateSettingsFromFields(setrec, uirec = api.ui, changes) {
@@ -279,6 +275,7 @@ function updateFieldsFromSettings(setrec, uirec = api.ui, opt = {}) {
                 let opt = document.createElement('option');
                 opt.appendChild(document.createTextNode(el.name));
                 opt.setAttribute('value', ev);
+                if (id === '#') opt.setAttribute('disabled', true);
                 uie.appendChild(opt);
             });
             if (chosen) {

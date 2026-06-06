@@ -31,15 +31,25 @@ function profileLoopsFromRuntime(api, profileTarget) {
     return null;
 }
 
+function normalizeProfileLoops(loops) {
+    if (!Array.isArray(loops) || !loops.length) return null;
+    const out = loops
+        .filter(loop => Array.isArray(loop) && loop.length >= 3)
+        .map(loop => loop.map(p => ({ x: Number(p?.x || 0), y: Number(p?.y || 0) })));
+    return out.length ? out : null;
+}
+
+function profileLoopsFromTarget(profileTarget = {}) {
+    return normalizeProfileLoops(profileTarget?.loops);
+}
+
 function profileLoopsFromSnapshot(snapshot, profileTarget) {
+    const direct = profileLoopsFromTarget(profileTarget);
+    if (direct?.length) return direct;
     const { sketchId, profileId, key } = resolveProfileTargetRef(profileTarget);
     if (!key || !sketchId || !profileId) return null;
     const map = snapshot?.profileLoops || {};
-    const loops = map[key];
-    if (!Array.isArray(loops) || !loops.length) return null;
-    return loops
-        .filter(loop => Array.isArray(loop) && loop.length >= 3)
-        .map(loop => loop.map(p => ({ x: Number(p?.x || 0), y: Number(p?.y || 0) })));
+    return normalizeProfileLoops(map[key]);
 }
 
 function makeBodyId(featureId, index) {
@@ -268,6 +278,8 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
             const operation = ['new', 'add', 'subtract'].includes(String(params.operation || 'new'))
                 ? String(params.operation || 'new')
                 : 'new';
+            // Symmetric is a single extrusion whose local span is shifted to
+            // [-depth/2, +depth/2], not two opposing extrusions/union.
             const localZShift = symmetric ? (-depth / 2) : (direction === 'reverse' ? -depth : 0);
             const createdBodyIds = [];
             const bySketch = new Map();
@@ -343,6 +355,7 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
                         };
                         body.extrude = { depth, direction, symmetric };
                         if (meshWorld) {
+                            meshWorld.source_solid_ids = [id];
                             meshCache.set(id, meshWorld);
                             createdBodyIds.push(id);
                         }
@@ -358,8 +371,19 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
                     : [];
                 const createdSolids = createdBodyIds.map(id => solids.find(s => s?.id === id)).filter(Boolean);
                 const targetSolids = targetIds.map(id => solids.find(s => s?.id === id)).filter(Boolean);
-                const toolMeshes = createdSolids.map(s => meshCache.get(s.id)).filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
-                const targetMeshes = targetSolids.map(s => meshCache.get(s.id)).filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
+                const withSourceIds = (mesh, sid) => {
+                    if (!mesh) return null;
+                    const source = Array.isArray(mesh.source_solid_ids) && mesh.source_solid_ids.length
+                        ? mesh.source_solid_ids
+                        : [sid];
+                    return { ...mesh, source_solid_ids: source.map(id => String(id || '')).filter(Boolean) };
+                };
+                const toolMeshes = createdSolids
+                    .map(s => withSourceIds(meshCache.get(s.id), s.id))
+                    .filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
+                const targetMeshes = targetSolids
+                    .map(s => withSourceIds(meshCache.get(s.id), s.id))
+                    .filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
                 let merge = null;
                 if (operation === 'add') {
                     const meshes = [...targetMeshes, ...toolMeshes];
@@ -371,6 +395,7 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
                 }
                 if (merge?.mesh?.positions?.length && merge?.mesh?.indices?.length) {
                     const consumed = new Set([...targetSolids.map(s => s.id), ...createdSolids.map(s => s.id)]);
+                    const consumedSourceSolidIds = Array.from(consumed);
                     const sketchIds = new Set();
                     for (const solid of [...targetSolids, ...createdSolids]) {
                         for (const sid of getSketchIdsForSolid(solid)) {
@@ -411,6 +436,7 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
                         },
                         status: 'manifold_extrude_boolean_ready'
                     };
+                    merge.mesh.source_solid_ids = consumedSourceSolidIds;
                     meshCache.set(id, merge.mesh);
                     solids.push(body);
                 }
@@ -438,8 +464,19 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
             } else if (targetSolids.length < 2) {
                 continue;
             }
-            const targetMeshes = targetSolids.map(s => meshCache.get(s.id)).filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
-            const toolMeshes = toolSolids.map(s => meshCache.get(s.id)).filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
+            const withSourceIds = (mesh, sid) => {
+                if (!mesh) return null;
+                const source = Array.isArray(mesh.source_solid_ids) && mesh.source_solid_ids.length
+                    ? mesh.source_solid_ids
+                    : [sid];
+                return { ...mesh, source_solid_ids: source.map(id => String(id || '')).filter(Boolean) };
+            };
+            const targetMeshes = targetSolids
+                .map(s => withSourceIds(meshCache.get(s.id), s.id))
+                .filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
+            const toolMeshes = toolSolids
+                .map(s => withSourceIds(meshCache.get(s.id), s.id))
+                .filter(mesh => mesh?.positions?.length && mesh?.indices?.length);
             if (mode === 'subtract') {
                 if (!targetMeshes.length || !toolMeshes.length) continue;
             } else if (targetMeshes.length < 2) {
@@ -489,6 +526,7 @@ async function rebuildGeneratedSolidsFromSnapshot(snapshot, options = {}) {
                     },
                     status: 'manifold_boolean_ready'
                 };
+                result.mesh.source_solid_ids = selectedIds.slice();
                 meshCache.set(id, result.mesh);
                 solids.push(body);
             }
@@ -530,7 +568,7 @@ async function rebuildGeneratedSolids(api, options = {}) {
         for (const profileTarget of profiles) {
             const { sketchId, profileId, key } = resolveProfileTargetRef(profileTarget);
             if (!sketchId || !profileId) continue;
-            const loops = profileLoopsFromRuntime(api, profileTarget);
+            const loops = profileLoopsFromTarget(profileTarget) || profileLoopsFromRuntime(api, profileTarget);
             if (!loops?.length) continue;
             profileLoops[key] = loops;
         }

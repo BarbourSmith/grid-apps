@@ -31,11 +31,11 @@ export function animate_clear2(api) {
     api.uc.setVisible(anim.laba, true);
     api.uc.setVisible(anim.vala, true);
     anim.vala.value = "0.0";
-    client.animate_cleanup2();
+    client.animate_cleanup2(undefined, () => {});
 }
 
 export function animate2(api, delay) {
-    let alert = api.alerts.show("building animation");
+    api.show.busy("building animation");
     let settings = api.conf.get();
     dark = settings.controller.dark;
     manifold = settings.controller.manifold;
@@ -92,7 +92,7 @@ export function animate2(api, delay) {
         button.pause.style.display = 'none';
 
         api.event.emit('animate', 'CAM');
-        api.alerts.hide(alert);
+        api.show.busy(false);
     });
 }
 
@@ -113,7 +113,10 @@ Object.assign(client, {
         });
         api.widgets.setColor(0x0055aa);
         api.widgets.setOpacity(0.5);
-        client.send("animate_setup2", { settings }, ondone);
+        client.send("animate_setup2", {
+            settings,
+            fromPrint: api.const.SETUP.cam_anim ? true : false
+        }, ondone);
     },
 
     animate_cleanup2(data, ondone) {

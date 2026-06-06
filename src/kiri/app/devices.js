@@ -3,6 +3,7 @@
 import { $, h } from '../../moto/webui.js';
 import { api } from './api.js';
 import { conf } from './conf/defaults.js';
+import { canEditSLAMachine } from '../mode/sla/core/formats.js';
 import { space } from '../../moto/space.js';
 import { devices as devlist } from '../../pack/kiri-devs.js';
 import { settings, conf as setconf } from './conf/manager.js';
@@ -185,6 +186,8 @@ function setDeviceCode(code, devicename) {
             }
         }
 
+        let allowSLADeviceEdit = mode !== 'SLA' || canEditSLAMachine(dev);
+
         // disable editing for non-local devices
         [
             // ui.deviceName,
@@ -226,14 +229,14 @@ function setDeviceCode(code, devicename) {
             ui.extOffsetX,
             ui.extOffsetY
         ].forEach(function(e) {
-            e.disabled = !local;
+            e.disabled = !local || !allowSLADeviceEdit;
         });
 
-        ui.devices.save.disabled = !local;
+        ui.devices.save.disabled = !local || !allowSLADeviceEdit;
         ui.devices.delete.disabled = !local;
         ui.devices.rename.disabled = !local;
         ui.devices.export.disabled = !local;
-        ui.devices.add.style.display = mode === 'SLA' ? 'none' : '';
+        ui.devices.add.style.display = allowSLADeviceEdit ? '' : 'none';
 
         if (local) {
             ui.devices.add.innerText = "copy";
@@ -301,9 +304,7 @@ function setDeviceCode(code, devicename) {
  */
 function renderDevices(devices) {
     let selected = api.device.get() || devices[0],
-        features = api.feature,
-        devs = setconf.get().devices,
-        dfilter = typeof(features.device_filter) === 'function' ? features.device_filter : undefined;
+        devs = setconf.get().devices;
 
     for (let local in devs) {
         if (!(devs.hasOwnProperty(local) && devs[local])) {
@@ -367,6 +368,31 @@ function renderDevices(devices) {
         api.device.export(exp, selected, { event, record });
     };
 
+    updateDeviceSelector(devices, api.ui.modeDevice, selected);
+    updateDeviceSelector(devices, $('dev-list'), selected);
+    selectDevice(selected);
+
+    // update related settings list
+    let curr = settings.get();
+    let slist = Object.keys(curr.sproc[settings.mode()]);
+    let cproc = settings.proc().processName;
+
+    h.bind(api.ui.modeProfile, slist.map(profile => {
+        return h.option({
+            _: profile,
+            selected: profile === cproc ? 1 : undefined,
+            onclick() { console.log({ select: profile })}
+        });
+    }));
+
+    api.ui.modeProfile.onchange = () => {
+        api.conf.load(undefined, api.ui.modeProfile.value);
+    };
+}
+
+function updateDeviceSelector(devices, selector, selected) {
+    let features = api.feature;
+    let dfilter = typeof(features.device_filter) === 'function' ? features.device_filter : undefined;
     let dedup = {};
     let list_cdev = [];
     let list_mdev = [];
@@ -388,7 +414,7 @@ function renderDevices(devices) {
         }
     });
 
-    let dev_list = $('dev-list');
+    let dev_list = selector;
     h.bind(dev_list, [
         h.option({ _: '-- My Devices --', disabled: true }),
         ...list_mdev,
@@ -401,7 +427,6 @@ function renderDevices(devices) {
         const seldev = dev_list.options[dev_list.selectedIndex];
         selectDevice(seldev.innerText);
         api.platform.layout();
+        updateDeviceList();
     }
-    selectDevice(selected);
 }
-
