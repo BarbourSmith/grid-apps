@@ -19,7 +19,7 @@
         "M30 ; program end"
     ],
     "gcodeDwell": [
-        "G4 P{time} ; dwell for {time}ms"
+        "G4 P{time} ; dwell for {time}s"
     ],
     "gcodeSpindle": [
         "M3 S{spindle}",
