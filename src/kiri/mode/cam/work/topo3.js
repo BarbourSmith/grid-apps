@@ -11,6 +11,7 @@ import { Tool } from '../core/tool.js';
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
 const SharedOrArrayBuffer = globalThis.SharedArrayBuffer || ArrayBuffer;
+const hasSharedArrays = globalThis.SharedArrayBuffer ? true : false;
 
 export class Topo {
     constructor() { }
@@ -457,7 +458,7 @@ export class Topo {
 
         let complete = 0;
         // define sharded ranges
-        if (minions.running > 1) {
+        if (hasSharedArrays && minions.running > 1) {
 
             dispatch.putCache({ key: widget.id, data: vertices }, {
                 done: data => {
@@ -534,7 +535,7 @@ export class Topo {
 
     async contour(params, onupdate) {
         const trace = this.trace;
-        const concurrent = self.kiri_worker.minions.running;
+        const concurrent = hasSharedArrays ? self.kiri_worker.minions.running : 0;
 
         const { minX, maxX, minY, maxY, boundsX, boundsY, stepsX, stepsY } = params;
         const { gridDelta, resolution, density, partOff, toolStep, contourX, contourY } = params;

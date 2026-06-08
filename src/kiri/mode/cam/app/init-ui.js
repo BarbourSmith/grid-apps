@@ -25,7 +25,6 @@ const { BufferGeometryUtils } = THREE;
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
-const hasSharedArrays = self.SharedArrayBuffer ? true : false;
 const CAM_ANIM_API = "/api/cam_anim";
 
 const { VIEWS, STACKS } = api.const;
