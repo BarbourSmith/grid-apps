@@ -457,6 +457,17 @@ export async function prepare_one(widget, settings, print, firstPoint, update) {
         return true;
     }
 
+    function nearTravelBoundary(point, bounds, epsilon) {
+        let closest;
+        for (let poly of bounds) {
+            let dist = point.distToPolySegments(poly, epsilon);
+            if (dist <= epsilon && (!closest || dist < closest.dist)) {
+                closest = { poly, dist };
+            }
+        }
+        return closest;
+    }
+
     /**
      * emit a cut or move operation from the current location to a new location
      * @param {Point} point destination for move in widget coordinate space
@@ -605,6 +616,13 @@ export async function prepare_one(widget, settings, print, firstPoint, update) {
                     if (debug) console.log({ ints, poly, deltaXY, deltaZ });
                     upAndOver = "bounds";
                     break;
+                }
+            }
+            if (!upAndOver) {
+                let nearFrom = nearTravelBoundary(from, check, ep);
+                let nearTo = nearTravelBoundary(to, check, ep);
+                if (nearFrom && nearTo && nearFrom.poly !== nearTo.poly) {
+                    upAndOver = "bounds-end";
                 }
             }
             lastTravelBounds = undefined;
