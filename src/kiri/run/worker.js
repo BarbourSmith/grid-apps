@@ -17,6 +17,7 @@ import { util } from '../../geo/base.js';
 import { version } from '../../moto/license.js';
 import { wasm_ctrl } from '../../geo/wasm.js';
 import { Widget, newWidget } from '../core/widget.js';
+import { toMesh as gerberToMesh } from '../../load/gbr.js';
 
 import { CAM } from '../mode/cam/work/init-work.js';
 import { DRAG } from '../mode/drag/init-work.js';
@@ -830,7 +831,7 @@ const dispatch = {
     },
 
     gerber2mesh(data, send) {
-        const vertices = load.GBR.toMesh(data, { progress(pct) {
+        const vertices = gerberToMesh(data, { progress(pct) {
             send.data({ progress: pct/100 });
         } } );
         send.data({ vertices }, [ vertices.buffer ]);
