@@ -125,7 +125,7 @@ export class Topo {
             let toolData = { positions: toolPos, bounds: toolBounds };
 
             let vertices = widget.getGeoVertices({ unroll: true, translate: true });
-            let wbounds = widget.getBoundingBox();
+            let wbounds = bounds.clone();
             if (!inside) {
                 wbounds.expandByVector({ x: toolDiameter/2 + resolution, y: toolDiameter/2 + resolution, z: 0 });
             }
