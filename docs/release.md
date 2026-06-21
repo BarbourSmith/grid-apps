@@ -2,6 +2,54 @@
 
 Full docs @ https://docs.grid.space/projects/kiri-moto
 
+# Release 4.7.1
+
+A focused patch release for CAM contouring, tab handling, Onshape/iframe animation workflows, SLA Photon Workshop output, and several workflow polish items.
+
+## CAM
+
+- fix stale GPU contour bounds when running contour X followed by contour Y
+- fix CPU/GPU contour tab height and Z-bottom behavior disagreements
+- improve travel-boundary checks between outward-offset perimeter polygons
+- allow contour operations to run without SharedArrayBuffer by falling back to non-minion paths
+- defer SharedArrayBuffer warnings until animation requires them
+- fix spurious worker replies during animation cleanup
+- fix Makera Carvera Air spindle dwell time units
+- improve CAM animation restart behavior in tabbed animation mode
+- fix animation tab title and transferred stock size handling
+- add tool number and tool name to CAM ZIP export filenames
+- improve whole-cylinder area selection
+
+## Onshape / Animation
+
+- add tabbed CAM animation transfer flow for iframe contexts without SharedArrayBuffer access
+- move CAM animation transfer storage to net-level-backed server storage
+- patch CAM animation settings and stock/path transfer behavior
+- add fallback to ArrayBuffer where SharedArrayBuffer is unavailable for topo/GPU paths
+
+## SLA / MSLA
+
+- fix Anycubic Photon Workshop `.pm3n` header writing
+- fix Anycubic per-layer height output
+
+## Import / Export
+
+- fix Gerber loader import errors
+- clean up Gerber loader logging and naming
+- post-process SVG polygons to clean up colinear and invalid points
+
+## UI / Workflow
+
+- add hotkeys modal
+- add Hotkeys entry to the help menu
+- rebind hotkeys modal to Shift+H to avoid Home shortcut conflict
+- improve dark-mode readability in the hotkeys dialog
+
+## Platform / Build
+
+- fix pinned webpack dependency behavior
+- update docs workflow
+
 # Release 4.7.0
 
 A broad update focused on SLA/MSLA export coverage, DXF import, CAM routing and drilling fixes, and a substantial menu/theme cleanup across Kiri:Moto.
