@@ -155,11 +155,14 @@ const funcs = self.minion = {
 
     sliceZ(data, seq) {
         debug('minion.sliceZ', { data, seq });
-        let { z, options } = data;
-        let { points } = cache;
+        let { z, points, options } = data;
+        let i = 0, p = 0, realp = new Array(points.length / 3);
+        while (i < points.length) {
+            realp[p++] = newPoint(points[i++], points[i++], points[i++]).round(3);
+        }
         let state = { zero: [] };
         let output = [];
-        sliceZ(z, points, {
+        sliceZ(z, realp, {
             ...options,
             each(out) { output.push(out) }
         }).then(() => {
@@ -172,12 +175,7 @@ const funcs = self.minion = {
     },
 
     setPoints(data, seq) {
-        let { points } = data;
-        let i = 0, p = 0, realp = new Array(points.length / 3);
-        while (i < points.length) {
-            realp[p++] = newPoint(points[i++], points[i++], points[i++]).round(3);
-        }
-        cache.points = realp;
+        delete cache.points;
     },
 
     putCache(msg) {
