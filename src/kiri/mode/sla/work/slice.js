@@ -215,10 +215,6 @@ export function sla_slice(settings, widget, onupdate, ondone) {
     let bounds = widget.getBoundingBox();
     let points = widget.getPoints();
 
-    if (isConcurrent) {
-        minions.setPoints(points);
-    }
-
     slicer.slice(points, {
         indices: process.indices || process.xray,
         union: controller.healMesh,
@@ -241,7 +237,6 @@ export function sla_slice(settings, widget, onupdate, ondone) {
             return newSlice(z).addTops(tops);
         });
         onSliceDone(slices).then(ondone);
-        minions.setPoints([]);
     });
 };
 
@@ -315,7 +310,9 @@ function computeSupports(widget, process, progress) {
         branchRadius = Math.bound(process.slaSupportSize * 0.24, tipRadius, 0.32),
         trunkRadius = Math.bound(process.slaSupportSize * 0.55, branchRadius, 1.20),
         segmentLayers = Math.max(6, Math.round(4 / process.slaSlice)),
-        contacts = collectSupportContacts(slices, process, spacing, tipRadius),
+        contacts = collectSupportContacts(slices, process, spacing, tipRadius, value => {
+            progress(value * 0.10);
+        }),
         levels = new Map(),
         segments = [];
 
@@ -351,7 +348,7 @@ function computeSupports(widget, process, progress) {
             spacing,
             segments
         });
-        progress(0.65 / contacts.length);
+        progress(0.55 / contacts.length);
     });
 
     emitSupportSegments({
@@ -371,18 +368,45 @@ function computeSupports(widget, process, progress) {
 function clusterSupportContacts(contacts, spacing) {
     let clusters = [],
         radius = supportClusterRadius(spacing),
-        radius2 = radius * radius;
+        radius2 = radius * radius,
+        grid = new Map();
+
+    function key(x, y) {
+        return `${x}:${y}`;
+    }
+
+    function bucketFor(point) {
+        return {
+            x: Math.floor(point.x / radius),
+            y: Math.floor(point.y / radius)
+        };
+    }
+
+    function addCluster(cluster) {
+        let cell = bucketFor(cluster.point),
+            k = key(cell.x, cell.y),
+            list = grid.get(k);
+        if (!list) grid.set(k, list = []);
+        list.push(cluster);
+    }
 
     contacts.slice().sort((a, b) => b.area - a.area).forEach(contact => {
-        let best, bestDist = Infinity;
+        let best, bestDist = Infinity,
+            cell = bucketFor(contact.point);
 
-        for (let cluster of clusters) {
-            let dx = contact.point.x - cluster.point.x,
-                dy = contact.point.y - cluster.point.y,
-                dist2 = dx * dx + dy * dy;
-            if (dist2 <= radius2 && dist2 < bestDist) {
-                best = cluster;
-                bestDist = dist2;
+        for (let x=cell.x - 1; x<=cell.x + 1; x++) {
+            for (let y=cell.y - 1; y<=cell.y + 1; y++) {
+                let list = grid.get(key(x, y));
+                if (!list) continue;
+                for (let cluster of list) {
+                    let dx = contact.point.x - cluster.point.x,
+                        dy = contact.point.y - cluster.point.y,
+                        dist2 = dx * dx + dy * dy;
+                    if (dist2 <= radius2 && dist2 < bestDist) {
+                        best = cluster;
+                        bestDist = dist2;
+                    }
+                }
             }
         }
 
@@ -393,6 +417,7 @@ function clusterSupportContacts(contacts, spacing) {
                 weight: 0
             };
             clusters.push(best);
+            addCluster(best);
         }
 
         best.contacts.push(contact);
@@ -483,14 +508,14 @@ function nearestRoot(roots, point) {
     return best;
 }
 
-function collectSupportContacts(slices, process, spacing, tipRadius) {
+function collectSupportContacts(slices, process, spacing, tipRadius, progress) {
     let contacts = [],
         minArea = Math.max(0.01, tipRadius * tipRadius),
-        minDist = Math.max(tipRadius * 2.25, spacing * 0.35);
+        minDist = Math.max(tipRadius * 2.25, spacing * 0.35),
+        slicesWithBridges = slices.filter(slice => !slice.synth && slice.bridges?.length),
+        total = Math.max(slicesWithBridges.length, 1);
 
-    slices.forEach(slice => {
-        if (slice.synth || !slice.bridges?.length) return;
-
+    slicesWithBridges.forEach((slice, index) => {
         let points = [],
             bridges = unsupportedBridgePolys(slice, process, minArea);
 
@@ -507,6 +532,8 @@ function collectSupportContacts(slices, process, spacing, tipRadius) {
                 area: point.supportArea || 0
             });
         });
+
+        if (progress) progress((index + 1) / total);
     });
 
     return contacts;
@@ -612,7 +639,7 @@ function routeSupportTree(args) {
         }
 
         let hit = firstSegmentCollision(slices, current, target,
-            routeSegmentRadius(current, target, tipRadius, branchRadius, trunkRadius), contact.slice.index);
+            routeSegmentRadius(current, target, tipRadius, branchRadius, trunkRadius), contact.slice.index, false);
         if (hit) {
             let terminator = contactTerminator(slices, current, target, hit, tipRadius);
             if (terminator) {
@@ -681,7 +708,7 @@ function planSupportRoute(args) {
                         prev: candidate
                     },
                     checkRadius = Math.max(radius, candidate.radius),
-                    collision = firstSegmentCollision(slices, candidate, node, checkRadius, contact.slice.index),
+                    collision = firstSegmentCollision(slices, candidate, node, checkRadius, contact.slice.index, true),
                     supportHit = supportCollides(slices[nextIndex], point, checkRadius),
                     miss = collision ? collision.count : 0,
                     score = candidate.cost +
@@ -945,11 +972,26 @@ function nextSupportLevel(currentIndex, baseIndex, segmentLayers) {
 
 function supportCollides(slice, point, radius) {
     if (slice.synth || !slice.tops?.length) return false;
-    let radius2 = radius * radius;
-    return slice.tops.some(top => {
-        let poly = top.poly;
+    let radius2 = radius * radius,
+        records = supportCollisionRecords(slice);
+
+    return records.some(record => {
+        let { poly, bounds } = record;
+        if (!bounds.containsOffsetXY(point.x, point.y, radius)) {
+            return false;
+        }
         return point.isInPolygon(poly) || point.nearPolygon(poly, radius2, true);
     });
+}
+
+function supportCollisionRecords(slice) {
+    if (!slice._supportCollisionRecords) {
+        slice._supportCollisionRecords = slice.tops.map(top => ({
+            poly: top.poly,
+            bounds: top.poly.bounds
+        }));
+    }
+    return slice._supportCollisionRecords;
 }
 
 function routeCandidatePoints(from, point, maxMove) {
@@ -1038,16 +1080,17 @@ function unionSupportLayers(slices, progress) {
 }
 
 function segmentCollides(slices, from, to, radius, contactIndex) {
-    return !!firstSegmentCollision(slices, from, to, radius, contactIndex);
+    return !!firstSegmentCollision(slices, from, to, radius, contactIndex, true);
 }
 
-function firstSegmentCollision(slices, from, to, radius, contactIndex) {
+function firstSegmentCollision(slices, from, to, radius, contactIndex, coarse) {
     let span = Math.max(1, from.sliceIndex - to.sliceIndex),
+        step = coarse ? Math.max(1, Math.ceil(span / 12)) : 1,
         first,
         clean,
         collisions = 0;
 
-    for (let index=from.sliceIndex; index>=to.sliceIndex; index--) {
+    for (let index=from.sliceIndex; index>=to.sliceIndex; index -= step) {
         if (index >= contactIndex - 2) continue;
         let slice = slices[index],
             t = (from.sliceIndex - index) / span,
@@ -1090,13 +1133,52 @@ function maxTreeMove(vertical, process) {
 }
 
 function dedupePoints(points, minDist) {
-    let out = [];
+    let out = [],
+        grid = new Map(),
+        minDist2 = minDist * minDist,
+        bucket = Math.max(minDist, 0.001);
+
+    function key(x, y) {
+        return `${x}:${y}`;
+    }
+
+    function bucketFor(point) {
+        return {
+            x: Math.floor(point.x / bucket),
+            y: Math.floor(point.y / bucket)
+        };
+    }
+
     points.sort((a, b) => (b.supportArea || 0) - (a.supportArea || 0));
+
     points.forEach(point => {
-        if (!out.some(existing => existing.distTo2D(point) < minDist)) {
+        let cell = bucketFor(point),
+            keep = true;
+
+        for (let x=cell.x - 1; keep && x<=cell.x + 1; x++) {
+            for (let y=cell.y - 1; keep && y<=cell.y + 1; y++) {
+                let list = grid.get(key(x, y));
+                if (!list) continue;
+                for (let existing of list) {
+                    let dx = existing.x - point.x,
+                        dy = existing.y - point.y;
+                    if (dx * dx + dy * dy < minDist2) {
+                        keep = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (keep) {
+            let k = key(cell.x, cell.y),
+                list = grid.get(k);
+            if (!list) grid.set(k, list = []);
+            list.push(point);
             out.push(point);
         }
     });
+
     return out;
 }
 

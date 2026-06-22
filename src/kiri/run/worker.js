@@ -40,7 +40,7 @@ let drivers = {
         WJET
     },
     ccvalue = self.navigator ? self.navigator.hardwareConcurrency || 0 : 0,
-    concurrent = Math.round(Math.max(4, self.Worker && ccvalue > 3 ? ccvalue * 0.75 : 0)),
+    concurrent = self.Worker && ccvalue > 3 ? Math.max(4, Math.round(ccvalue * 0.75)) : 0,
     current = {
         print: null,
         snap: null,
@@ -286,14 +286,19 @@ const minwork = {
         }
     },
 
-    setPoints(points) {
-        let i = 0, floatP = new Float32Array(points.length * 3);
+    encodePoints(points) {
+        let i = 0,
+            floatP = new Float32Array(points.length * 3);
         for (let p of points) {
             floatP[i++] = p.x;
             floatP[i++] = p.y;
             floatP[i++] = p.z;
         }
-        minwork.broadcast("setPoints", { points: floatP });
+        return floatP;
+    },
+
+    setPoints(points) {
+        minwork.broadcast("setPoints", {});
     },
 
     // added functions (should be namespaced)
@@ -407,9 +412,11 @@ const minwork = {
                 reject("concurrent slice unavaiable");
             }
             let { each } = options;
+            let floatP = minwork.encodePoints(points);
             minwork.queue({
                 cmd: "sliceZ",
                 z,
+                points: floatP,
                 options: codec.toCodable(options)
             }, data => {
                 let recs = codec.decode(data.output);
@@ -419,7 +426,7 @@ const minwork = {
                     }
                 }
                 resolve(recs);
-            });
+            }, [ floatP.buffer ]);
         });
     },
 };
