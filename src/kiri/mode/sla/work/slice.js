@@ -533,7 +533,7 @@ function collectSupportContacts(slices, process, spacing, tipRadius, progress) {
             });
         });
 
-        if (progress) progress((index + 1) / total);
+        if (progress) progress(1 / total);
     });
 
     return contacts;
