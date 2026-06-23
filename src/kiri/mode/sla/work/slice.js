@@ -34,8 +34,8 @@ export function sla_slice(settings, widget, onupdate, ondone) {
 
     // calculate % complete and call onupdate()
     function doupdate(work, msg) {
+        work_remain = Math.max(0, work_remain - work);
         onupdate(0.25 + ((work_total - work_remain) / work_total) * 0.75, msg);
-        work_remain -= work;
     }
 
     // for each slice, perform a function and call doupdate()
@@ -310,8 +310,8 @@ function computeSupports(widget, process, progress) {
         branchRadius = Math.bound(process.slaSupportSize * 0.24, tipRadius, 0.32),
         trunkRadius = Math.bound(process.slaSupportSize * 0.55, branchRadius, 1.20),
         segmentLayers = Math.max(6, Math.round(4 / process.slaSlice)),
-        contacts = collectSupportContacts(slices, process, spacing, tipRadius, value => {
-            progress(value * 0.10);
+        contacts = collectSupportContacts(slices, process, spacing, tipRadius, delta => {
+            progress(delta * 0.10);
         }),
         levels = new Map(),
         segments = [];
@@ -331,7 +331,9 @@ function computeSupports(widget, process, progress) {
         return;
     }
 
-    clusterSupportContacts(contacts, spacing);
+    clusterSupportContacts(contacts, spacing, delta => {
+        progress(delta * 0.10);
+    });
 
     contacts.forEach(contact => {
         routeSupportTree({
@@ -348,7 +350,7 @@ function computeSupports(widget, process, progress) {
             spacing,
             segments
         });
-        progress(0.55 / contacts.length);
+        progress(0.45 / contacts.length);
     });
 
     emitSupportSegments({
@@ -365,11 +367,12 @@ function computeSupports(widget, process, progress) {
     unionSupportLayers(slices, progress);
 }
 
-function clusterSupportContacts(contacts, spacing) {
+function clusterSupportContacts(contacts, spacing, progress) {
     let clusters = [],
         radius = supportClusterRadius(spacing),
         radius2 = radius * radius,
-        grid = new Map();
+        grid = new Map(),
+        total = Math.max(contacts.length, 1);
 
     function key(x, y) {
         return `${x}:${y}`;
@@ -424,6 +427,8 @@ function clusterSupportContacts(contacts, spacing) {
         best.weight += Math.max(contact.area, 1);
         best.point.x = lerp(best.point.x, contact.point.x, Math.max(contact.area, 1) / best.weight);
         best.point.y = lerp(best.point.y, contact.point.y, Math.max(contact.area, 1) / best.weight);
+
+        if (progress) progress(1 / total);
     });
 
     clusters.forEach(cluster => {
