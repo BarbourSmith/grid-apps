@@ -335,6 +335,10 @@ function computeSupports(widget, process, progress) {
         progress(delta * 0.10);
     });
 
+    let routeWeight = contacts.reduce((sum, contact) => {
+        return sum + supportRouteWeight(contact, baseIndex);
+    }, 0) || 1;
+
     contacts.forEach(contact => {
         routeSupportTree({
             slices,
@@ -350,7 +354,7 @@ function computeSupports(widget, process, progress) {
             spacing,
             segments
         });
-        progress(0.45 / contacts.length);
+        progress(0.45 * supportRouteWeight(contact, baseIndex) / routeWeight);
     });
 
     emitSupportSegments({
@@ -511,6 +515,10 @@ function nearestRoot(roots, point) {
     });
 
     return best;
+}
+
+function supportRouteWeight(contact, baseIndex) {
+    return Math.max(1, contact.slice.index - baseIndex);
 }
 
 function collectSupportContacts(slices, process, spacing, tipRadius, progress) {
@@ -713,21 +721,30 @@ function planSupportRoute(args) {
                         prev: candidate
                     },
                     checkRadius = Math.max(radius, candidate.radius),
-                    collision = firstSegmentCollision(slices, candidate, node, checkRadius, contact.slice.index, true),
                     supportHit = supportCollides(slices[nextIndex], point, checkRadius),
-                    miss = collision ? collision.count : 0,
                     score = candidate.cost +
-                        miss * 100000 +
                         (supportHit ? 50000 : 0) +
                         point.distTo2D(desired) * 8 +
                         candidate.point.distTo2D(point);
 
+                node.checkRadius = checkRadius;
+                node.contactIndex = contact.slice.index;
                 node.cost = score;
                 keepBestRouteCandidate(next, node, spacing);
             });
         });
 
         candidates = Array.from(next.values())
+            .sort((a, b) => a.cost - b.cost)
+            .slice(0, routeCandidateLimit())
+            .map(node => {
+                let collision = firstSegmentCollision(slices, node.prev, node, node.checkRadius, node.contactIndex, true),
+                    miss = collision ? collision.count : 0;
+                node.cost += miss * 100000;
+                delete node.checkRadius;
+                delete node.contactIndex;
+                return node;
+            })
             .sort((a, b) => a.cost - b.cost)
             .slice(0, 12);
         currentIndex = nextIndex;
@@ -1032,6 +1049,10 @@ function routeCandidatePoints(from, point, maxMove) {
     }
 
     return out;
+}
+
+function routeCandidateLimit() {
+    return 48;
 }
 
 function keepBestRouteCandidate(map, node, spacing) {
