@@ -1,16 +1,13 @@
 /** Copyright Stewart Allen <sa@grid.space> -- All Rights Reserved */
 
-import { util } from '../../../../geo/base.js';
 import { slicer } from '../../../../geo/slicer.js';
 import { newPoint } from '../../../../geo/point.js';
 import { newPolygon } from '../../../../geo/polygon.js';
 import { polygons as POLY } from '../../../../geo/polygons.js';
 import { newSlice, newTop } from '../../../core/slice.js';
-import { layerProcessTops, layerDiff, projectFlats, projectBridges } from '../../fdm/work/slice.js';
+import { layerProcessTops, layerDiff } from '../../fdm/work/slice.js';
 import { PNG } from '../../../../ext/pngjs.esm.js';
 import { SLA } from './init-work.js';
-
-const tracker = util.pwait;
 
 let fill_cache;
 
@@ -138,15 +135,11 @@ export function sla_slice(settings, widget, onupdate, ondone) {
             slices[i].down = slices[i-1];
         }
         let solidLayers = Math.round(process.slaShell / process.slaSlice);
-        // setup solid fill
-        slices.forEach(function(slice) {
-            slice.solids = [];
-        });
         // compute total work for progress bar
         work_total = [
             5,  // shell
             10, // diff
-            solidLayers ? 10 : 0, // shell project
+            0,  // shell project
             solidLayers ? 10 : 0, // shell fill
             !solidLayers ? 10 : 0, // solid
             process.slaFillDensity && process.slaShell ? 60 : 0, // infill
@@ -170,27 +163,11 @@ export function sla_slice(settings, widget, onupdate, ondone) {
             });
         }, "delta");
         if (solidLayers) {
-            forSlices(slices, 10, (slice) => {
+            function doUnionSolid(slice) {
                 if (slice.synth) return;
-                projectFlats(slice, solidLayers);
-                projectBridges(slice, solidLayers);
-            }, "project");
-            async function doUnionSolid(slice) {
-                if (slice.synth) return;
-                let traces = POLY.nest(POLY.flatten(slice.topShells()));
-                if (slice.solids) {
-                    let trims = slice.solids || [];
-                    traces.appendAll(trims);
-                    // slice.unioned = POLY.setZ(POLY.union(traces, undefined, true), slice.z);
-                    slice.unioned = POLY.setZ(await minions.union(traces), slice.z);
-                } else {
-                    slice.unioned = traces;
-                }
+                slice.unioned = POLY.nest(POLY.flatten(slice.topShells()));
             }
-            let promises = slices.map(slice => doUnionSolid(slice));
-            await tracker(promises, (i, t) => {
-                doupdate(10 / promises.length, "solid");
-            });
+            forSlices(slices, 10, doUnionSolid, "solid");
         } else {
             forSlices(slices, 10, (slice) => {
                 if (slice.synth) return;
