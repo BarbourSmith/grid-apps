@@ -2,6 +2,32 @@
 
 Full docs @ https://docs.grid.space/projects/kiri-moto
 
+# Release 4.7.2
+
+A focused patch release for SLA memory use and support generation, plus CAM helical thread-milling controls and drill travel-boundary handling.
+
+## SLA / MSLA
+
+- reduce SLA hollow-shell memory use by removing FDM-style solid projection from the SLA shell path
+- reduce memory pressure in threaded SLA slicing by passing point arrays directly to minions
+- improve SLA support generation performance
+- improve SLA support progress reporting during contact collection, clustering, and route planning
+- prevent SLA support trunks and branches from intersecting the model
+- add slice crash progress breadcrumbs that report the last known stage after browser reload
+
+## CAM
+
+- add helical operation entry conditions for neutral, center, inside, and outside entry
+- add helical operation exit conditions for neutral, inside, and outside exit
+- preserve legacy center-entry behavior while exposing the new entry condition control
+- make center entry offset visible only when center entry is selected
+- fix helical operation tooltip misspellings
+- establish travel move boundaries for drill operations
+
+## FDM / Slicing
+
+- reduce minion memory retention by sending slice point arrays with each threaded slice request instead of caching them in minions
+
 # Release 4.7.1
 
 A focused patch release for CAM contouring, tab handling, Onshape/iframe animation workflows, SLA Photon Workshop output, and several workflow polish items.
