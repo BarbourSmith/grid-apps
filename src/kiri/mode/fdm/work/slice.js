@@ -318,6 +318,10 @@ export function sliceOne(settings, widget, onupdate, ondone) {
         }
     }
 
+    if (isConcurrent) {
+        minions.setPoints(points);
+    }
+
     // create Slice objects for specified list of Z heights
     // zGen() produces the list (or empty for slicer auto-detected)
     slice(points, {
@@ -344,7 +348,7 @@ export function sliceOne(settings, widget, onupdate, ondone) {
         zGen,
         // slicer function (worker local or minion distributed)
         slicer(z, points, opts) {
-            return (isConcurrent ? minions.sliceZ : sliceZ)(z, points, opts);
+            return isConcurrent ? minions.sliceZ(z, undefined, opts) : sliceZ(z, points, opts);
         },
         onupdate(update) {
             return onupdate(0.0 + update * 0.5)
@@ -352,6 +356,11 @@ export function sliceOne(settings, widget, onupdate, ondone) {
     })
     .then(decodeSlices)
     .then(processSlices)
+    .then(() => {
+        if (isConcurrent) {
+            minions.setPoints();
+        }
+    })
     .then(ondone);
 
     // z index generator (bottom up)

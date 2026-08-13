@@ -298,7 +298,11 @@ const minwork = {
     },
 
     setPoints(points) {
-        minwork.broadcast("setPoints", {});
+        if (points?.length) {
+            minwork.broadcast("setPoints", { points: minwork.encodePoints(points) });
+        } else {
+            minwork.broadcast("setPoints", {});
+        }
     },
 
     // added functions (should be namespaced)
@@ -412,13 +416,16 @@ const minwork = {
                 reject("concurrent slice unavaiable");
             }
             let { each } = options;
-            let floatP = minwork.encodePoints(points);
-            minwork.queue({
+            let floatP = points ? minwork.encodePoints(points) : undefined;
+            let work = {
                 cmd: "sliceZ",
                 z,
-                points: floatP,
                 options: codec.toCodable(options)
-            }, data => {
+            };
+            if (floatP) {
+                work.points = floatP;
+            }
+            minwork.queue(work, data => {
                 let recs = codec.decode(data.output);
                 if (each) {
                     for (let rec of recs) {
@@ -426,7 +433,7 @@ const minwork = {
                     }
                 }
                 resolve(recs);
-            }, [ floatP.buffer ]);
+            }, floatP ? [ floatP.buffer ] : undefined);
         });
     },
 };
