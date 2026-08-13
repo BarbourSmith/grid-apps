@@ -57,7 +57,7 @@ class OpRough extends CamOp {
             let slicer = newSlicer({ zflatup: true });
             let flats = Object.entries(slicer.zFlat)
                 .filter(row => row[1] > 1)
-                .map(row => row[0])
+                .map(row => parseFloat(row[0]))
                 .sort((a,b) => b-a);
             ops_list.push(new OpArea(state, {
                 rename: op.rename ?? "flats",
