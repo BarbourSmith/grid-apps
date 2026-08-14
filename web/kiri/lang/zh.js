@@ -547,6 +547,8 @@ self.lang['zh'] = {
     cr_clrp_l:      ["铣出通过凹槽","而不仅仅是轮廓"],
     cr_clrf_s:      "清除面",
     cr_clrf_l:      ["插值下刀以","清除任何检测到的平面区域"],
+    cr_cpat_s:      "pattern",
+    cr_cpat_l:      ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
     cr_olin_s:      "仅内部",
     cr_olin_l:      ["将切削限制在","零件边界内"],
 
@@ -719,6 +721,10 @@ self.lang['zh'] = {
     ct_nabl_l:      ["自动生成径向连接片","从零件中心投影","使用数量和角度偏移"],
 
     // 数控区域操作
+    ca_slmn_s:      "min slope",
+    ca_slmn_l:      ["minimum path slope angle","from horizontal"],
+    ca_slmx_s:      "max slope",
+    ca_slmx_l:      ["maximum path slope angle","from horizontal"],
     ca_fini_s:      "精加工切削",
     ca_fini_l:      "遵循最终零件轮廓的切削路径。允许在清理较大区域时精确步进。",
 

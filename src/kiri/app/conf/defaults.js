@@ -588,6 +588,7 @@ export const conf = {
                 camRegisterSpeed: 1000,
                 camRegisterThru: 5,
                 camRoughAll: true,
+                camRoughClear: "offset",
                 camRoughDown: 2,
                 camRoughFlat: false,
                 camRoughIn: true,

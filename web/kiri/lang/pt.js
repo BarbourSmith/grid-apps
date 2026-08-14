@@ -554,6 +554,8 @@ self.lang['pt-pt'] = {
     cr_clrp_l:      ["fresar bolsas de passagem","em vez de apenas o contorno"],
     cr_clrf_s:      "limpar faces",
     cr_clrf_l:      ["interpolar profundidade de passo para","limpar quaisquer áreas planas detectadas"],
+    cr_cpat_s:      "pattern",
+    cr_cpat_l:      ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
     cr_olin_s:      "apenas interior",
     cr_olin_l:      ["limitar corte a","dentro dos limites da peça"],
 
@@ -726,6 +728,10 @@ self.lang['pt-pt'] = {
     ct_nabl_l:      ["gerar automaticamente abas radiais","projectadas do centro da peça","usando número e desvio de ângulo"],
 
     // CNC AREA OP
+    ca_slmn_s:      "min slope",
+    ca_slmn_l:      ["minimum path slope angle","from horizontal"],
+    ca_slmx_s:      "max slope",
+    ca_slmx_l:      ["maximum path slope angle","from horizontal"],
     ca_fini_s:      "corte de acabamento",
     ca_fini_l:      "caminho de corte que segue o contorno da peça final. permite passo preciso ao limpar uma área maior.",
 

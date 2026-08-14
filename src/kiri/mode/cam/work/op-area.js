@@ -203,19 +203,28 @@ class OpArea extends CamOp {
                     } else {
                         POLY.subtract([ area ], shadow, clip, undefined, undefined, 0);
                     }
-                    //generate offsets to use
-                    let offsets = [ firstOff ];
-                    //if we need a finish cut, add it
-                    let finish_cut = op.finish_cut ?? 0;
-                    if (finish_cut != 0) { //todo: this should check for camInnerFirst and warn if it is not true
-                        offsets.push(-finish_cut);
+                    if (op.clearing === 'linear') {
+                        POLY.offset(clip, [ firstOff ], {
+                            count: 1, outs, flat: true, z: z - zMov, ...offopt
+                        });
+                        if (!op.walls) {
+                            outs.push(...linearClear(outs, toolOver, toolDiam));
+                        }
+                    } else {
+                        //generate offsets to use
+                        let offsets = [ firstOff ];
+                        //if we need a finish cut, add it
+                        let finish_cut = op.finish_cut ?? 0;
+                        if (finish_cut != 0) { //todo: this should check for camInnerFirst and warn if it is not true
+                            offsets.push(-finish_cut);
+                        }
+                        //everything else uses the tool stepover
+                        offsets.push(-toolOver);
+                        //actually offset the walls inwards
+                        POLY.offset(clip, offsets, {
+                            count: op.walls ? 1 : (op.steps ?? 999), outs, flat: true, z: z - zMov, ...offopt
+                        });
                     }
-                    //everything else uses the tool stepover
-                    offsets.push(-toolOver);
-                    //actually offset the walls inwards
-                    POLY.offset(clip, offsets, {
-                        count: op.walls ? 1 : (op.steps ?? 999), outs, flat: true, z: z - zMov, ...offopt
-                    });
                     // if we see no offsets, re-check the mesh bottom Z then exit
                     if (outs.length === 0) {
                         if (bounds && lzo > bounds.min.z) {
@@ -246,7 +255,7 @@ class OpArea extends CamOp {
                         let tab_shadows = tabs.filter(t => t.top >= z).map(t => t.poly);
                         if (tab_shadows) tool_shadow.push(...tab_shadows);
                     }
-                    POLY.setWinding(outs, direction === 'climb');
+                    POLY.setWinding(outs.filter(poly => !poly.isOpen()), direction === 'climb');
                     // store travel boundary that triggers up and over moves
                     slice.tool_shadow = [ area, ...shadow, ...tool_shadow ];
                     slice.camLines = outs;
@@ -528,6 +537,98 @@ class OpArea extends CamOp {
             }
         }
     }
+}
+
+function linearClear(polys, spacing, toolDiam) {
+    if (!(polys && polys.length)) {
+        return [];
+    }
+
+    let best;
+    for (let angle of [ 0, 90, 45, -45, 30, -30, 60, -60 ]) {
+        let points = [];
+        POLY.fillArea(polys, angle, spacing, points, toolDiam);
+        let lines = pointPairsToLines(points);
+        if (!lines.length) {
+            continue;
+        }
+        let score = scoreLinearClear(lines);
+        if (!best || score > best.score) {
+            best = { angle, lines, score };
+        }
+    }
+
+    return best ? routeLinearLines(best.lines) : [];
+}
+
+function pointPairsToLines(points) {
+    let lines = [];
+    for (let i = 0; i < points.length; i += 2) {
+        let p1 = points[i],
+            p2 = points[i + 1];
+        if (p1 && p2) {
+            lines.push({ p1, p2, len: p1.distTo2D(p2) });
+        }
+    }
+    return lines;
+}
+
+function scoreLinearClear(lines) {
+    let cut = 0,
+        travel = 0,
+        last;
+
+    for (let line of lines) {
+        cut += line.len;
+        if (last) {
+            travel += Math.min(last.distTo2D(line.p1), last.distTo2D(line.p2));
+        }
+        last = line.p2;
+    }
+
+    return (cut / lines.length) - (travel / lines.length) * 0.5;
+}
+
+function routeLinearLines(lines) {
+    let routed = [],
+        last;
+
+    while (lines.length) {
+        let best,
+            bestIndex = 0,
+            bestReverse = false,
+            bestDist = Infinity;
+
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            if (!last) {
+                best = line;
+                bestIndex = i;
+                break;
+            }
+            let d1 = last.distTo2D(line.p1),
+                d2 = last.distTo2D(line.p2);
+            if (d1 < bestDist) {
+                best = line;
+                bestIndex = i;
+                bestReverse = false;
+                bestDist = d1;
+            }
+            if (d2 < bestDist) {
+                best = line;
+                bestIndex = i;
+                bestReverse = true;
+                bestDist = d2;
+            }
+        }
+
+        lines.splice(bestIndex, 1);
+        let points = bestReverse ? [ best.p2, best.p1 ] : [ best.p1, best.p2 ];
+        last = points[1];
+        routed.push(newPolygon().setOpen().addPoints(points));
+    }
+
+    return routed;
 }
 
 function filterSlopePaths(paths, min, max, minRunLength = 0) {

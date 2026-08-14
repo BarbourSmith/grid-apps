@@ -124,6 +124,10 @@ const LISTS = {
         { name: "legacy 1" },
         { name: "legacy 2" }
     ],
+    roughclear: [
+        { name: "offset" },
+        { name: "linear" }
+    ],
     opmode: [
         { name: "clear" },
         { name: "trace" },

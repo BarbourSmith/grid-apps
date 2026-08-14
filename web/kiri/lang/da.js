@@ -553,6 +553,8 @@ self.lang['da-dk'] = {
     cr_clrp_l: ["fræs ud gennem lommer","i stedet for kun omridset"],
     cr_clrf_s: "ryd flader",
     cr_clrf_l: ["interpoler step ned for at","rydde eventuelle registrerede flade områder"],
+    cr_cpat_s: "pattern",
+    cr_cpat_l: ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
     cr_olin_s: "kun indersider",
     cr_olin_l: ["begræns skæring til","indvendige del grænser"],
 
@@ -725,6 +727,10 @@ self.lang['da-dk'] = {
     ct_nabl_l: ["auto generer radiale tapper","projekteret fra del center","ved brug af antal og vinkel forskydning"],
 
     // CNC AREA OP
+    ca_slmn_s: "min slope",
+    ca_slmn_l: ["minimum path slope angle","from horizontal"],
+    ca_slmx_s: "max slope",
+    ca_slmx_l: ["maximum path slope angle","from horizontal"],
     ca_fini_s: "efterbehandlings snit",
     ca_fini_l: "skærebane der følger konturen af den endelige del. tillader præcis step over ved rydning af større område.",
 

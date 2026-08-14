@@ -553,6 +553,8 @@ self.lang['pl-pl'] = {
     cr_clrp_l:      ["wyfreza kieszenie","zamiast tylko konturu"],
     cr_clrf_s:      "wyczyść powierzchnie",
     cr_clrf_l:      ["interpoluj krok w dół, aby","wyczyścić wykryte płaskie obszary"],
+    cr_cpat_s:      "pattern",
+    cr_cpat_l:      ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
     cr_olin_s:      "tylko wewnątrz",
     cr_olin_l:      ["ogranicz cięcie do","wewnątrz granic części"],
 
@@ -725,6 +727,10 @@ self.lang['pl-pl'] = {
     ct_nabl_l:      ["automatycznie generuj wypustki promieniowe","rzutowane od środka części","używając liczby i przesunięcia kąta"],
 
     // CNC AREA OP
+    ca_slmn_s:      "min slope",
+    ca_slmn_l:      ["minimum path slope angle","from horizontal"],
+    ca_slmx_s:      "max slope",
+    ca_slmx_l:      ["maximum path slope angle","from horizontal"],
     ca_fini_s:      "cięcie wykończeniowe",
     ca_fini_l:      "ścieżka cięcia podążająca za konturem ostatecznej części. pozwala na precyzyjny krok przy usuwaniu większego obszaru.",
 
