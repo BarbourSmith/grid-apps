@@ -554,8 +554,8 @@ self.lang['de-de'] = {
     cr_clrp_l:      ["Durch Taschen fräsen","statt nur Umriss"],
     cr_clrf_s:      "Flächen räumen",
     cr_clrf_l:      ["Zustellung interpolieren um","erkannte flache Bereiche zu räumen"],
-    cr_cpat_s:      "pattern",
-    cr_cpat_l:      ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
+    cr_cpat_s:      "Muster",
+    cr_cpat_l:      ["Räummuster für Schruppen","Offset verwendet progressive Versätze","Linear verwendet Fülllinien"],
     cr_olin_s:      "Nur innen",
     cr_olin_l:      ["Schneiden auf","Innenseite der Teil-Grenzen beschränken"],
 
@@ -728,10 +728,10 @@ self.lang['de-de'] = {
     ct_nabl_l:      ["Radiale Haltestege automatisch generieren","projiziert von Teil-Mitte","mit Anzahl und Winkel-Offset"],
 
     // CNC AREA OP
-    ca_slmn_s:      "min slope",
-    ca_slmn_l:      ["minimum path slope angle","from horizontal"],
-    ca_slmx_s:      "max slope",
-    ca_slmx_l:      ["maximum path slope angle","from horizontal"],
+    ca_slmn_s:      "min. Neigung",
+    ca_slmn_l:      ["minimaler Bahn-Neigungswinkel","von der Horizontalen"],
+    ca_slmx_s:      "max. Neigung",
+    ca_slmx_l:      ["maximaler Bahn-Neigungswinkel","von der Horizontalen"],
     ca_fini_s:      "Schlichtwerkzeugweg",
     ca_fini_l:      "Schneidpfad, der der Kontur des Endteils folgt. ermöglicht präzisen Vorschub beim Räumen größerer Bereiche.",
 

@@ -554,8 +554,8 @@ self.lang['es-es'] = {
     cr_clrp_l:      ["fresar cavidades atravesándolas","en lugar de solo el contorno"],
     cr_clrf_s:      "limpiar caras",
     cr_clrf_l:      ["interpolar profundidad de paso para","limpiar cualquier área plana detectada"],
-    cr_cpat_s:      "pattern",
-    cr_cpat_l:      ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
+    cr_cpat_s:      "patrón",
+    cr_cpat_l:      ["patrón de limpieza de desbaste","desplazamiento usa pasadas progresivas","lineal usa líneas de relleno"],
     cr_olin_s:      "solo interior",
     cr_olin_l:      ["limitar el corte a","dentro de los límites de la pieza"],
 
@@ -728,10 +728,10 @@ self.lang['es-es'] = {
     ct_nabl_l:      ["generar automáticamente pestañas radiales","proyectadas desde el centro de la pieza","usando cantidad y desplazamiento de ángulo"],
 
     // CNC AREA OP
-    ca_slmn_s:      "min slope",
-    ca_slmn_l:      ["minimum path slope angle","from horizontal"],
-    ca_slmx_s:      "max slope",
-    ca_slmx_l:      ["maximum path slope angle","from horizontal"],
+    ca_slmn_s:      "pendiente mín",
+    ca_slmn_l:      ["ángulo mínimo de pendiente de la trayectoria","desde la horizontal"],
+    ca_slmx_s:      "pendiente máx",
+    ca_slmx_l:      ["ángulo máximo de pendiente de la trayectoria","desde la horizontal"],
     ca_fini_s:      "corte de acabado",
     ca_fini_l:      "trayectoria de corte que sigue el contorno de la pieza final. permite un paso preciso al limpiar un área más grande.",
 
