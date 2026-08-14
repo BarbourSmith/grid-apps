@@ -435,7 +435,7 @@ class OpArea extends CamOp {
 
                 let slopeMin = sr_slope_min ?? 0;
                 let slopeMax = sr_slope_max ?? 90;
-                output.paths = filterSlopePaths(output.paths, slopeMin, slopeMax, toolDiam);
+                output.paths = filterSlopePaths(output.paths, slopeMin, slopeMax, toolDiam/2);
 
                 // convert terrain raster output back to open polylines
                 // todo: add leave_z support
