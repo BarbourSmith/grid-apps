@@ -542,6 +542,7 @@ function preparePreview(callback, scale = 1, offset = 0) {
             output.forEach(layer => {
                 stack.add(layer);
             });
+            stack.compact();
             event.emit('preview.view', view);
             // rotate stack for belt beds
             if (isBelt && widgets[0].belt) {
@@ -671,6 +672,7 @@ function parseCode(code, type) {
         stacks.clear();
         const stack = stacks.create('parse', space.world);
         layers.forEach(layer => stack.add(layer));
+        stack.compact();
         view.update_slider_max(true);
         view.update_speeds(maxSpeed, minSpeed);
         show.slices();

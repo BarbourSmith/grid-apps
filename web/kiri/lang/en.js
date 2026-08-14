@@ -558,6 +558,8 @@ self.lang['en-us'] = {
     cr_olin_l:      ["limit cutting to","inside part boundaries"],
     cr_clrf_s:      "clear faces",
     cr_clrf_l:      ["add additional clearing passes","for detected z planar flat areas"],
+    cr_cpat_s:      "pattern",
+    cr_cpat_l:      ["rough clearing pattern","offset uses progressive insets","linear uses fill lines"],
 
     // CNC OUTLINE
     co_menu:        "outline",
@@ -740,6 +742,10 @@ self.lang['en-us'] = {
     ca_altr_l:      "alternate direction of travel lines (zigzag)",
     ca_sang_s:      "step angle",
     ca_sang_l:      "crossing angle on the XY plane for contour lines",
+    ca_slmn_s:      "min slope",
+    ca_slmn_l:      ["minimum path slope angle","from horizontal"],
+    ca_slmx_s:      "max slope",
+    ca_slmx_l:      ["maximum path slope angle","from horizontal"],
     ca_wall_s:      "walls",
     ca_wall_l:      ["perform a single pass along vertical faces. leave interior spaces. similar to outline operation"],
     ca_fini_s:      "finish cut",
