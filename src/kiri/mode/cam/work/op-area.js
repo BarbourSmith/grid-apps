@@ -20,6 +20,8 @@ const ctyp = clib.ClipType;
 const ptyp = clib.PolyType;
 const cfil = clib.PolyFillType;
 const ts_eps = 0.01;
+const linearClearWallGap = 0.05;
+const linearClearWallGapToolFactor = 0.05;
 const surfaceSlopeMerge = true;
 const surfaceSlopeMergeEps = 0.01;
 const surfaceSlopeMergeFlatEps = 0.05;
@@ -204,11 +206,17 @@ class OpArea extends CamOp {
                         POLY.subtract([ area ], shadow, clip, undefined, undefined, 0);
                     }
                     if (op.clearing === 'linear') {
+                        let perimeter = outs;
                         POLY.offset(clip, [ firstOff ], {
-                            count: 1, outs, flat: true, z: z - zMov, ...offopt
+                            count: 1, outs: perimeter, flat: true, z: z - zMov, ...offopt
                         });
-                        if (!op.walls) {
-                            outs.push(...linearClear(outs, toolOver, toolDiam));
+                        if (!op.walls && perimeter.length) {
+                            let fillArea = [],
+                                fillGap = Math.max(linearClearWallGap, toolDiam * linearClearWallGapToolFactor);
+                            POLY.offset(perimeter, [ -fillGap ], {
+                                count: 1, outs: fillArea, flat: true, z: z - zMov, ...offopt
+                            });
+                            outs.push(...linearClear(fillArea, toolOver, toolDiam));
                         }
                     } else {
                         //generate offsets to use
