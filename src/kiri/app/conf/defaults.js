@@ -447,6 +447,8 @@ export const conf = {
                 camAreaSurface: "linear",
                 camAreaEdgeOnly: false,
                 camAreaAngle: 0,
+                camAreaSlopeMin: 0,
+                camAreaSlopeMax: 90,
                 camAreaOver: 0.4,
                 camAreaDown: 1,
                 camAreaSpeed: 1000,

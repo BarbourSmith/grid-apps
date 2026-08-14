@@ -763,6 +763,8 @@ export function createPopOps() {
         tr_type: 'camAreaTrace',
         sr_type: 'camAreaSurface',
         sr_angle: 'camAreaAngle',
+        sr_slope_min: 'camAreaSlopeMin',
+        sr_slope_max: 'camAreaSlopeMax',
         sr_alter: 'camAreaZigZag',
         over: 'camAreaOver',
         down: 'camAreaDown',
@@ -810,6 +812,8 @@ export function createPopOps() {
         down: UC.newInput(LANG.cc_sdwn_s, { title: LANG.cc_sdwn_l, convert: toFloat, bound: UC.bound(0, 100.0), units, show: () => isClear() || isTrace() }),
         finish_cut: UC.newInput(LANG.ca_fini_s, { title: LANG.ca_fini_l, convert: toFloat, bound: UC.bound(0, 10.0), units, show: () => isClear() }), //todo: needs to check camInnerFirst
         refine: UC.newInput(LANG.cp_refi_s, { title: LANG.cp_refi_l, convert: toInt, show: isSurface }),
+        sr_slope_min: UC.newInput("min slope", { title: "minimum path slope angle from horizontal", convert: toFloat, bound: UC.bound(0, 90), show: isSurface }),
+        sr_slope_max: UC.newInput("max slope", { title: "maximum path slope angle from horizontal", convert: toFloat, bound: UC.bound(0, 90), show: isSurface }),
         sr_alter: UC.newBoolean(LANG.ca_altr_s, undefined, { title: LANG.ca_altr_l, show: isSurfaceLinear }),
         dogbones: UC.newBoolean(LANG.co_dogb_s, undefined, { title: LANG.co_dogb_l, show: isTrace }),
         revbones: UC.newBoolean(LANG.co_dogr_s, undefined, { title: LANG.co_dogr_l, show: () => env.poppedRec.dogbones }),
