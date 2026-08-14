@@ -435,7 +435,7 @@ class OpArea extends CamOp {
 
                 let slopeMin = sr_slope_min ?? 0;
                 let slopeMax = sr_slope_max ?? 90;
-                output.paths = filterSlopePaths(output.paths, slopeMin, slopeMax);
+                output.paths = filterSlopePaths(output.paths, slopeMin, slopeMax, toolDiam);
 
                 // convert terrain raster output back to open polylines
                 // todo: add leave_z support
@@ -530,7 +530,7 @@ class OpArea extends CamOp {
     }
 }
 
-function filterSlopePaths(paths, min, max) {
+function filterSlopePaths(paths, min, max, minRunLength = 0) {
     min = Math.max(0, Math.min(90, min));
     max = Math.max(0, Math.min(90, max));
     if (min > max) {
@@ -579,18 +579,28 @@ function filterSlopePaths(paths, min, max) {
                 run.push(x1, y1, z1);
                 lastAngle = signedAngle;
             } else if (run) {
-                if (run.length >= 6) {
-                    out.push(run);
-                }
+                emitSlopeRun(out, run, minRunLength);
                 run = undefined;
                 lastAngle = undefined;
             }
         }
-        if (run && run.length >= 6) {
-            out.push(run);
-        }
+        if (run) emitSlopeRun(out, run, minRunLength);
     }
     return out;
+}
+
+function emitSlopeRun(out, run, minRunLength) {
+    if (run.length >= 6 && pathLength(run) >= minRunLength) {
+        out.push(run);
+    }
+}
+
+function pathLength(path) {
+    let length = 0;
+    for (let i = 3; i < path.length; i += 3) {
+        length += Math.hypot(path[i] - path[i - 3], path[i + 1] - path[i - 2]);
+    }
+    return length;
 }
 
 function canMergeSlope(run, x1, y1, angle, lastAngle) {
