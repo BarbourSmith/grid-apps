@@ -443,6 +443,7 @@ export const conf = {
                 camAreaSpindle: 1000,
                 camAreaTool: 1000,
                 camAreaMode: "clear",
+                camAreaClear: "offset",
                 camAreaTrace: "none",
                 camAreaSurface: "linear",
                 camAreaEdgeOnly: false,
