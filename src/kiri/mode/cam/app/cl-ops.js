@@ -477,6 +477,7 @@ export function createPopOps() {
 
     createPopOp('trace', {
         mode: 'camTraceType',
+        clearing: 'camAreaClear',
         offset: 'camTraceOffset',
         spindle: 'camTraceSpindle',
         direction: 'camMillDirection',
@@ -498,6 +499,7 @@ export function createPopOps() {
     }).inputs = {
         tool: UC.newSelect(LANG.cc_tool, {}, "tools"),
         mode: UC.newSelect(LANG.cu_type_s, { title: LANG.cu_type_l }, "trace"),
+        clearing: UC.newSelect(LANG.cr_cpat_s, { title: LANG.cr_cpat_l, show: () => env.poppedRec.mode === "clear" }, "roughclear"),
         offset: UC.newSelect(LANG.cc_offs_s, { title: LANG.cc_offs_l, show: () => (env.poppedRec.mode === 'follow') }, "traceoff"),
         direction: UC.newSelect(LANG.ou_dire_s, { title: LANG.ou_dire_l }, "direction"),
         sep: UC.newBlank({ class: "pop-sep" }),
@@ -761,6 +763,7 @@ export function createPopOps() {
         spindle: 'camAreaSpindle',
         tool: 'camAreaTool',
         mode: 'camAreaMode',
+        clearing: 'camAreaClear',
         direction: 'camMillDirection',
         tr_type: 'camAreaTrace',
         sr_type: 'camAreaSurface',
@@ -787,6 +790,7 @@ export function createPopOps() {
         finish_cut: 0,
     }).inputs = {
         mode: UC.newSelect(LANG.mo_menu, { post: opRender }, "opmode"),
+        clearing: UC.newSelect(LANG.cr_cpat_s, { title: LANG.cr_cpat_l, show: isClear }, "roughclear"),
         tr_type: UC.newSelect(LANG.cc_offs_s, { title: LANG.cc_offs_l, show: isTrace }, "traceoff"),
         sr_type: UC.newSelect("pattern", { title: "pattern", show: isSurface }, "surftyp"),
         sep: UC.newBlank({ class: "pop-sep" }),
