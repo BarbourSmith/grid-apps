@@ -216,7 +216,9 @@ class OpArea extends CamOp {
                             POLY.offset(perimeter, [ -fillGap ], {
                                 count: 1, outs: fillArea, flat: true, z: z - zMov, ...offopt
                             });
-                            outs.push(...linearClear(fillArea, toolOver, toolDiam));
+                            let fill = linearClear(fillArea, toolOver, toolDiam);
+                            alignPerimeterToFill(perimeter, fill);
+                            outs.push(...fill);
                         }
                     } else {
                         //generate offsets to use
@@ -567,6 +569,34 @@ function linearClear(polys, spacing, toolDiam) {
     }
 
     return best ? routeLinearLines(best.lines) : [];
+}
+
+function alignPerimeterToFill(perimeter, fill) {
+    let start = fill?.[0]?.first();
+    if (!start) {
+        return;
+    }
+
+    let closest;
+    for (let poly of perimeter) {
+        if (poly.isOpen()) {
+            continue;
+        }
+        let find = poly.findClosestPointTo(start);
+        if (!closest || find.distance < closest.distance) {
+            closest = find;
+        }
+    }
+
+    if (!(closest && closest.index)) {
+        return;
+    }
+
+    let poly = closest.poly;
+    poly.points = [
+        ...poly.points.slice(closest.index),
+        ...poly.points.slice(0, closest.index)
+    ];
 }
 
 function pointPairsToLines(points) {
