@@ -506,6 +506,8 @@ export function sliceOne(settings, widget, onupdate, ondone) {
         let indices = stack.map(s => s.z);
         let zAngNorm = Math.sin(process.sliceSupportAngle * Math.PI / 180);
         let manual = process.sliceSupportType === 'manual';
+        let { paint } = widget.anno;
+        let { belt } = widget;
 
         // sort bottom up so shadows do not accumulate
         // since that is done later and clipped to slice.clips
@@ -532,9 +534,6 @@ export function sliceOne(settings, widget, onupdate, ondone) {
         }
 
         // process manual supports if they exist
-        let { paint } = widget.anno;
-        let { belt } = widget;
-
         // apply belt transformations, if needed
         if (manual && belt && paint?.length) {
             let { anchor, angle, dy, slope } = belt;
@@ -594,8 +593,38 @@ export function sliceOne(settings, widget, onupdate, ondone) {
             // console.log('TREE OUTPUT');
         }
 
+        function beltClip(shadow, z) {
+            let boundsx = bounds.dim.x * 1.1;
+            let boundsy = bounds.dim.y * 1.1;
+            let skewy = z * belt.slope;
+            let clip = newPolygon()
+                .centerRectangle(newPoint(0, 0, z), boundsx, boundsy)
+                .move({ x: 0, y: -boundsy / 2 + skewy, z: 0 });
+            return POLY.trimTo(shadow, [ clip ]);
+        }
+
+        function addBeltSupportSlice(from) {
+            let slice = newSlice(from.z - sliceHeight);
+            slice.index = -1;
+            slice.height = from.height || sliceHeight;
+            slice.params = process;
+            slice.extruder = extruder;
+            slice.widget = widget;
+            slice.solids = [];
+            slice.belt = {};
+            slice.up = from;
+            from.down = slice;
+            slices.unshift(slice);
+            stack.unshift(slice);
+            length++;
+            return slice;
+        }
+
         // perform accumulation top down
-        for (let slice of stack.slice().reverse()) {
+        let work = stack.slice().reverse();
+        let beltExt = 0;
+        while (work.length) {
+            let slice = work.shift();
             let shadow = slice.shadow ?? [];
             if (devel) slice.output().setLayer("shadow", 0xff0000).addPolys(shadow);
             if (process.sliceSupportExtra) {
@@ -622,16 +651,13 @@ export function sliceOne(settings, widget, onupdate, ondone) {
             shadowSum = shadow;
             // if belt, clip shadow to belt angle projection along platform
             if (belt) {
-                let boundsx = bounds.dim.x * 1.1;
-                let boundsy = bounds.dim.y * 1.1;
-                let skewy = slice.z * belt.slope;
-                let clip = newPolygon()
-                    .centerRectangle(newPoint(0, 0, slice.z), boundsx, boundsy)
-                    .move({ x: 0, y: -boundsy / 2 + skewy, z: 0 });
-                shadow = POLY.trimTo(shadow, [ clip ]);
+                shadow = beltClip(shadow, slice.z);
                 // if (devel) slice.output().setLayer("belt clip", 0xffff00).addPolys([ clip ]);
             }
             slice.supports = shadow;
+            if (belt && work.length === 0 && shadow.length && ++beltExt < 10000) {
+                work.push(addBeltSupportSlice(slice));
+            }
             // if (devel) slice.output().setLayer("shadow", 0xff0000).addPolys(shadow);
             trackupdate((++count/length), div[1].lo, div[1].hi, "support");
         }
