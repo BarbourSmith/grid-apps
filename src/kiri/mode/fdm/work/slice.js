@@ -620,9 +620,22 @@ export function sliceOne(settings, widget, onupdate, ondone) {
             return slice;
         }
 
+        function projectBeltShadow(shadow, fromZ, toZ) {
+            let dz = toZ - fromZ;
+            let dy = belt.slope ? -dz / belt.slope : 0;
+            if (!dy) {
+                return shadow;
+            }
+            return POLY.setZ(
+                shadow.clone(true).map(poly => poly.move({ x: 0, y: dy, z: 0 })),
+                toZ
+            );
+        }
+
         // perform accumulation top down
         let work = stack.slice().reverse();
         let beltExt = 0;
+        let shadowZ;
         while (work.length) {
             let slice = work.shift();
             let shadow = slice.shadow ?? [];
@@ -632,7 +645,8 @@ export function sliceOne(settings, widget, onupdate, ondone) {
             }
             // shadows accumulate down
             if (shadowSum) {
-                shadow = POLY.union([...shadow, ...shadowSum], minArea, true);
+                let carry = belt ? projectBeltShadow(shadowSum, shadowZ, slice.z) : shadowSum;
+                shadow = POLY.union([...shadow, ...carry], minArea, true);
             }
             // subtract slice top areas (widget boundaries) from shadow projection
             if (true) {
@@ -649,6 +663,7 @@ export function sliceOne(settings, widget, onupdate, ondone) {
                 shadow = POLY.offset(shadow, -bump, { z: slice.z });
             }
             shadowSum = shadow;
+            shadowZ = slice.z;
             // if belt, clip shadow to belt angle projection along platform
             if (belt) {
                 shadow = beltClip(shadow, slice.z);
