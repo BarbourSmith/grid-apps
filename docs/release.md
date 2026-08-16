@@ -2,6 +2,51 @@
 
 Full docs @ https://docs.grid.space/projects/kiri-moto
 
+# Release 4.7.3
+
+A focused patch release for CAM clearing and surfacing controls, workspace import selection, render performance, and slicing memory/stability fixes.
+
+## CAM
+
+- add a linear roughing clear pattern that runs the outline and fills the interior with routed linear passes
+- add the linear clear pattern option to Area clear and Trace clear operations
+- offset linear clear fill lines away from the first perimeter to reduce wall marring
+- align roughing perimeters to start near the first linear fill line and reduce unnecessary jumps
+- add slope angle min/max filtering for Area surfacing paths
+- remove short stranded surfacing segments left behind by slope filtering
+- fix rough flat detection by ignoring sparse Z-flat levels
+- improve contour feed limiting so shallow descending moves stay near cutting feed rates instead of dropping to plunge rate
+- reduce CAM slicer Z bucketing precision to group flatter surfaces more reliably
+- fix Flip operation Z-bottom inversion so global Z bottom becomes `stock.z - zbottom` when enabled
+- fix intermittent trace hover highlighting caused by shared trace materials
+- add a Makera Z1 CNC machine profile
+
+## Import / Export
+
+- add a checklist for `.kmz` workspace imports so users can choose which assets to import
+- allow imported workspaces to omit workspace objects, machine definitions, process profiles, CNC tools, or application preferences
+- remember the previous `.kmz` import asset selections for the next import
+- fix a worker import error
+
+## Rendering / UI
+
+- improve 3D render performance for stacked slice views and text overlays
+- add occlusion helpers used by the render path
+- remove the support-yellow UI styling
+
+## FDM / Slicing
+
+- reduce threaded FDM slicing memory use by restoring cached minion point handling
+- allow minion `sliceZ` requests to use cached points or per-request points
+
+## Mesh:Tool
+
+- round flattened mesh tool Z values
+
+## Platform / Build
+
+- update Electron dependency
+
 # Release 4.7.2
 
 A focused patch release for SLA memory use and support generation, plus CAM helical thread-milling controls and drill travel-boundary handling.
